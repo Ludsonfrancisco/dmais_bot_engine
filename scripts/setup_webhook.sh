@@ -30,17 +30,25 @@ echo "🔧 Configurando webhook da instância '${EVOLUTION_INSTANCE_NAME}'..."
 echo "   URL do webhook: ${WEBHOOK_URL}"
 echo ""
 
-# TODO: Implementar chamada curl para POST /webhook/set/{instance}
-# curl -s -X POST \
-#   "${EVOLUTION_API_URL}/webhook/set/${EVOLUTION_INSTANCE_NAME}" \
-#   -H "apikey: ${EVOLUTION_API_KEY}" \
-#   -H "Content-Type: application/json" \
-#   -d '{
-#     "enabled": true,
-#     "url": "'"${WEBHOOK_URL}"'",
-#     "webhookByEvents": true,
-#     "events": ["MESSAGES_UPSERT", "CONNECTION_UPDATE"]
-#   }'
+RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+  "${EVOLUTION_API_URL}/webhook/set/${EVOLUTION_INSTANCE_NAME}" \
+  -H "apikey: ${EVOLUTION_API_KEY}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "url": "'"${WEBHOOK_URL}"'",
+    "webhookByEvents": true,
+    "events": ["MESSAGES_UPSERT", "CONNECTION_UPDATE"]
+  }')
 
-echo ""
-echo "✅ Webhook configurado com sucesso!"
+HTTP_BODY=$(echo "$RESPONSE" | head -n -1)
+HTTP_CODE=$(echo "$RESPONSE" | tail -n 1)
+
+if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+  echo "✅ Webhook configurado com sucesso! (HTTP $HTTP_CODE)"
+  echo "$HTTP_BODY"
+else
+  echo "❌ Falha ao configurar webhook (HTTP $HTTP_CODE):"
+  echo "$HTTP_BODY"
+  exit 1
+fi

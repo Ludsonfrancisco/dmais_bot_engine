@@ -225,6 +225,8 @@ Todas obrigatórias salvo indicação contrária. Carregadas em `worker/settings
 
 ### 6.4 Resposta esperada do Django (pendentes-recolha)
 
+`GET /api/logistica-reversa/pendentes-recolha/?page={N}`
+
 ```json
 {
   "count": 142,
@@ -242,6 +244,39 @@ Todas obrigatórias salvo indicação contrária. Carregadas em `worker/settings
   ]
 }
 ```
+
+**Valores possíveis de `status`:**
+
+| Valor | Ação do poller |
+|---|---|
+| `PENDENTE_CONFIRMACAO` | Enviar mensagem inicial (se ainda não enviada) |
+| `TIMEOUT` | Chamar `on_timeout.handle(agendamento_id)` e limpar estado Redis |
+
+Qualquer outro valor é ignorado silenciosamente pelo poller.
+
+### 6.5 Resposta esperada do Django (slots de remarcação)
+
+`GET /api/logistica-reversa/slots/{agendamento_id}/`
+
+```json
+[
+  {
+    "slot_id": 1,
+    "inicio": "2026-05-12T09:00:00-03:00",
+    "fim": "2026-05-12T11:00:00-03:00"
+  },
+  {
+    "slot_id": 2,
+    "inicio": "2026-05-13T14:00:00-03:00",
+    "fim": "2026-05-13T16:00:00-03:00"
+  }
+]
+```
+
+- Lista vazia `[]` significa sem slots disponíveis → `enviar_slots` deve enviar mensagem neutra e postar `FALHA` ao Django.
+- Máximo 10 itens considerados (limite WhatsApp); itens excedentes são descartados silenciosamente.
+- O `rowId` da List Message é montado como `SLOT:{inicio}` (campo `inicio` em ISO 8601).
+- O `title` legível é formatado a partir de `inicio` e `fim` (ex.: `"Seg 12/05 às 09h-11h"`).
 
 ---
 
@@ -268,15 +303,16 @@ Todas obrigatórias salvo indicação contrária. Carregadas em `worker/settings
 |--------|------|-----------|
 | `GET`  | `/health` | Healthcheck. Retorna `{"status":"ok","redis":"ok","evolution":"ok"}`. |
 | `POST` | `/webhook/evolution` | Recebe webhooks da EvolutionAPI (mensagens, status, conexão). |
+| `POST` | `/debug/test-send` | **Apenas para validação de setup.** Dispara o fluxo de envio inicial com um agendamento sintético, sem consultar o Django. Corpo: `{"telefone": "5511999999999", "nome": "Teste", "data": "2026-01-01", "hora": "14:00"}`. Retorna `{"status":"ok","evolution_response":{...}}` ou erro. Usado pelo `make test-send`. |
 
 ---
 
 ## 10. Logs e Observabilidade
 
 - **Formato:** JSON via `structlog`, escritos em stdout (capturados pelo Docker).
-- **Campos obrigatórios:** `timestamp`, `level`, `event`, `correlation_id`, `agendamento_id` (quando aplicável), `telefone` (mascarado nos últimos 4 dígitos).
+- **Campos obrigatórios:** `timestamp`, `level`, `event`, `correlation_id`, `agendamento_id` (quando aplicável), `telefone` (mascarado: exibir apenas os últimos 4 dígitos, ex.: `"****8888"`).
 - **Correlation ID:** gerado no início do polling ou ao receber webhook; propagado em todos os logs do mesmo fluxo via `contextvars`.
-- **LGPD:** mensagens não devem logar conteúdo livre digitado pelo cliente em `level=INFO`; usar `DEBUG` para payloads brutos.
+- **LGPD:** texto livre digitado pelo cliente nunca deve aparecer em `level=INFO` ou acima. Payloads brutos do Evolution só em `level=DEBUG`. Header `Authorization` deve ser removido pelo processador `structlog` antes de serializar qualquer log.
 
 ---
 

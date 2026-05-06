@@ -18,104 +18,106 @@
 ## Bloco 1 — Bootstrap do repositório
 
 ### 10.C.1 — Inicializar repositório Git e `.gitignore`
-- [ ] `git init` na raiz `dmais_bot_engine/`
-- [ ] Criar `.gitignore` otimizado para Python (venv, `__pycache__`, `.env`, `*.pyc`, `.idea/`, `.vscode/`, `dist/`, `build/`, `*.egg-info`, `htmlcov/`, `.pytest_cache/`, `.coverage`)
-- [ ] Primeiro commit: `chore: bootstrap repo`
+- [x] `git init` na raiz `dmais_bot_engine/`
+- [x] Criar `.gitignore` otimizado para Python (venv, `__pycache__`, `.env`, `*.pyc`, `.idea/`, `.vscode/`, `dist/`, `build/`, `*.egg-info`, `htmlcov/`, `.pytest_cache/`, `.coverage`)
+- [x] Primeiro commit: `chore: bootstrap repo`
 
 ### 10.C.2 — README.md detalhado
-- [ ] Criar `README.md` cobrindo:
-  - [ ] Visão geral e arquitetura (resumo do PRD)
-  - [ ] Pré-requisitos (Docker, Docker Compose, Make)
-  - [ ] Setup (`cp .env.example .env`, `make up`)
-  - [ ] **Pareamento WhatsApp via QRCode** (passo a passo de criação da instância na EvolutionAPI e leitura do QR)
-  - [ ] Tabela de variáveis de ambiente
-  - [ ] Comandos do Makefile
-  - [ ] Troubleshooting comum
+- [x] Criar `README.md` cobrindo:
+  - [x] Visão geral e arquitetura (resumo do PRD)
+  - [x] Pré-requisitos (Docker, Docker Compose, Make)
+  - [x] Setup (`cp .env.example .env`, `make up`)
+  - [x] **Pareamento WhatsApp via QRCode** (passo a passo de criação da instância na EvolutionAPI e leitura do QR)
+  - [x] Tabela de variáveis de ambiente
+  - [x] Comandos do Makefile
+  - [x] Troubleshooting comum
 
 ### 10.C.3 — `.env.example`
-- [ ] Criar arquivo com TODAS as variáveis (com comentários explicando cada uma):
-  - [ ] `DJANGO_API_BASE_URL`
-  - [ ] `DJANGO_API_TOKEN`
-  - [ ] `EVOLUTION_API_URL`
-  - [ ] `EVOLUTION_API_KEY`
-  - [ ] `EVOLUTION_INSTANCE_NAME`
-  - [ ] `REDIS_URL`
-  - [ ] `POLLING_INTERVAL_SECONDS`
-  - [ ] `MAX_MESSAGES_PER_MINUTE`
-  - [ ] `LOG_LEVEL`
-  - [ ] `WORKER_HTTP_PORT`
-- [ ] Garantir que `.env` real está no `.gitignore`
+- [x] Criar arquivo com TODAS as variáveis (com comentários explicando cada uma):
+  - [x] `DJANGO_API_BASE_URL`
+  - [x] `DJANGO_API_TOKEN`
+  - [x] `EVOLUTION_API_URL`
+  - [x] `EVOLUTION_API_KEY`
+  - [x] `EVOLUTION_INSTANCE_NAME`
+  - [x] `REDIS_URL`
+  - [x] `POLLING_INTERVAL_SECONDS`
+  - [x] `MAX_MESSAGES_PER_MINUTE`
+  - [x] `LOG_LEVEL`
+  - [x] `WORKER_HTTP_PORT`
+- [x] Garantir que `.env` real está no `.gitignore`
 
 ---
 
 ## Bloco 2 — Infraestrutura Docker
 
 ### 10.C.4 — `docker-compose.yml` (3 serviços)
-- [ ] Definir versão do compose
-- [ ] Serviço `evolution-api` (`atendai/evolution-api:latest`)
-  - [ ] Mapear porta do gateway
-  - [ ] Variáveis de ambiente mínimas exigidas pela imagem
-- [ ] Serviço `redis` (`redis:7-alpine`)
-  - [ ] AOF habilitado (`--appendonly yes`)
-- [ ] Serviço `worker` (build local em `./worker`)
-  - [ ] `depends_on` com `condition: service_healthy` em `redis` e `evolution-api`
-  - [ ] Carregar `.env`
-- [ ] Rede compose interna nomeada (`dmais_net`)
+- [x] Definir versão do compose
+- [x] Serviço `evolution-api` (`atendai/evolution-api:latest`)
+  - [x] Mapear porta do gateway
+  - [x] Variáveis de ambiente mínimas exigidas pela imagem
+- [x] Serviço `redis` (`redis:7-alpine`)
+  - [x] AOF habilitado (`--appendonly yes`)
+- [x] Serviço `worker` (build local em `./worker`)
+  - [x] `depends_on` com `condition: service_healthy` em `redis` e `evolution-api`
+  - [x] Carregar `.env`
+- [x] Rede compose interna nomeada (`dmais_net`)
 
 ### 10.C.5 — Volumes persistentes nomeados
-- [ ] `evolution-instances` montado em `/evolution/instances` no container Evolution
-- [ ] `evolution-store` montado em `/evolution/store` no container Evolution
-- [ ] `redis-data` montado em `/data` no container Redis
-- [ ] Documentar no README como fazer backup/restore desses volumes
+- [x] `evolution-instances` montado em `/evolution/instances` no container Evolution
+- [x] `evolution-store` montado em `/evolution/store` no container Evolution
+- [x] `redis-data` montado em `/data` no container Redis
+- [x] Documentar no README como fazer backup/restore desses volumes
 
 ### 10.C.6 — Healthchecks no compose
-- [ ] `redis`: `redis-cli ping` a cada 10 s
-- [ ] `evolution-api`: HTTP GET na rota raiz/`/manager` a cada 15 s
-- [ ] `worker`: HTTP GET em `/health` (porta interna) a cada 15 s
-- [ ] Definir `start_period` adequado (Evolution leva ~30 s para subir)
+- [x] `redis`: `redis-cli ping` a cada 10 s
+- [x] `evolution-api`: HTTP GET na rota raiz/`/manager` a cada 15 s
+- [x] `worker`: HTTP GET em `/health` (porta interna) a cada 15 s
+- [x] Definir `start_period` adequado (Evolution leva ~30 s para subir)
 
 ---
 
 ## Bloco 3 — Imagem do Worker
 
 ### 10.C.7 — `worker/Dockerfile`
-- [ ] Base `python:3.11-slim`
-- [ ] Instalar dependências do sistema mínimas (`build-essential` se necessário, ou `gcc` apenas em estágio de build se usar multi-stage)
-- [ ] Copiar `requirements.txt` antes do código (cache de layer)
-- [ ] `pip install --no-cache-dir -r requirements.txt`
-- [ ] Copiar código do worker
-- [ ] `EXPOSE ${WORKER_HTTP_PORT}` (ou valor fixo 8000)
-- [ ] `CMD` rodando `uvicorn worker.main:app --host 0.0.0.0 --port 8000`
-- [ ] Usuário não-root
+- [x] Base `python:3.11-slim`
+- [x] Instalar dependências do sistema mínimas (`curl`)
+- [x] Copiar `requirements.txt` antes do código (cache de layer)
+- [x] `pip install --no-cache-dir -r requirements.txt`
+- [x] Copiar código do worker
+- [x] `EXPOSE 8000`
+- [x] `CMD` rodando `uvicorn worker.main:app --host 0.0.0.0 --port 8000`
+- [x] Usuário não-root (`appuser` uid/gid 1000)
 
 ### 10.C.8 — `worker/requirements.txt`
-- [ ] `httpx`
-- [ ] `pydantic`
-- [ ] `pydantic-settings`
-- [ ] `redis`
-- [ ] `structlog`
-- [ ] `python-dotenv`
-- [ ] `tenacity`
-- [ ] `fastapi`
-- [ ] `uvicorn[standard]`
-- [ ] Pinnar versões (semver compatível)
+- [x] `httpx`
+- [x] `pydantic`
+- [x] `pydantic-settings`
+- [x] `redis`
+- [x] `structlog`
+- [x] `python-dotenv`
+- [x] `tenacity`
+- [x] `fastapi`
+- [x] `uvicorn[standard]`
+- [x] Versões pinadas (semver compatível)
 
 ---
 
 ## Bloco 4 — Núcleo do Worker
 
 ### 10.C.9 — Pacote `worker/` e `settings.py`
-- [ ] Criar `worker/__init__.py` (vazio)
-- [ ] Criar `worker/settings.py`:
-  - [ ] Classe `Settings(BaseSettings)` com todas as envs do PRD §5
-  - [ ] Validações (URLs, ints, log level)
-  - [ ] Singleton `settings = Settings()` exportado
+- [x] Criar `worker/__init__.py` (vazio)
+- [x] Criar `worker/settings.py`:
+  - [x] Classe `Settings(BaseSettings)` com todas as envs do PRD §5
+  - [x] Validações (URLs, ints, log level)
+  - [x] Singleton `settings = Settings()` exportado
 
 ### 10.C.10 — `worker/logs.py`
-- [ ] Configurar `structlog` em modo JSON
-- [ ] Processador para injetar `correlation_id` (via `contextvars`)
-- [ ] Helper `bind_correlation_id(cid)` e `new_correlation_id()`
-- [ ] Filtro para mascarar `Authorization` e dados sensíveis
+- [x] Configurar `structlog` em modo JSON
+- [x] Processador para injetar `correlation_id` (via `contextvars`)
+- [x] Helper `bind_correlation_id(cid)` e `new_correlation_id()`
+- [x] Filtro para mascarar header `Authorization` antes de serializar
+- [x] Filtro para mascarar campo `telefone`: exibir apenas últimos 4 dígitos (`"****8888"`)
+- [x] Garantir que payloads brutos do Evolution só apareçam em `level=DEBUG` (LGPD)
 
 ### 10.C.11 — `worker/api_client.py` (Django)
 - [ ] Cliente `httpx.AsyncClient` reaproveitável
@@ -202,32 +204,95 @@
 - [ ] Lifespan que sobe o **poller** como task assíncrona em background
 - [ ] Endpoint `POST /webhook/evolution` → `on_response.handle`
 - [ ] Endpoint `GET /health` → ver 10.C.24
+- [ ] Endpoint `POST /debug/test-send` → ver 10.C.25
 - [ ] Loop de polling:
-  - [ ] `while True: page = 1; iterar paginação; para cada agendamento → `enviar_inicial`; sleep `POLLING_INTERVAL_SECONDS`
-  - [ ] Tratar exceções para que o loop **não morra**
+  - [ ] `while True: page = 1; iterar paginação completa via campo `next``
+  - [ ] Para cada agendamento com `status == "PENDENTE_CONFIRMACAO"` → `enviar_inicial.handle(agendamento)`
+  - [ ] Para cada agendamento com `status == "TIMEOUT"` → `on_timeout.handle(agendamento_id)`
+  - [ ] Qualquer outro status: ignorar silenciosamente
+  - [ ] Tratar exceções para que o loop **nunca morra** (logar erro e continuar)
 - [ ] Shutdown graceful (fecha clients httpx e redis)
 
 ### 10.C.22 — Configurar webhook da EvolutionAPI
-- [ ] Documentar no README a chamada `POST /webhook/set/{instance}` apontando para `http://worker:{WORKER_HTTP_PORT}/webhook/evolution`
-- [ ] Eventos a habilitar: `MESSAGES_UPSERT`, `CONNECTION_UPDATE`
-- [ ] Opcional: script `scripts/setup_webhook.sh` (curl) idempotente
+- [x] Webhook global configurado via variáveis de ambiente no `docker-compose.yml`:
+  - [x] `WEBHOOK_GLOBAL_URL=http://worker:{WORKER_HTTP_PORT}/webhook/evolution`
+  - [x] `WEBHOOK_GLOBAL_ENABLED=true`
+  - [x] `WEBHOOK_EVENTS_MESSAGES_UPSERT=true` e `WEBHOOK_EVENTS_CONNECTION_UPDATE=true`
+- [x] Finalizar `scripts/setup_webhook.sh`: curl ativado para `POST /webhook/set/{instance}` com validação de HTTP code (útil para forçar reconfiguração manual sem restartar o compose)
 
 ### 10.C.24 — Endpoint `/health`
 - [ ] `GET /health` retorna 200 com `{"status":"ok","redis":"<ok|fail>","evolution":"<ok|fail>"}`
 - [ ] Faz ping no Redis e GET leve na Evolution
 - [ ] Usado pelo healthcheck do `docker-compose.yml`
 
+### 10.C.25 — Endpoint `/debug/test-send`
+- [ ] `POST /debug/test-send` aceita `{"telefone": str, "nome": str, "data": str, "hora": str}`
+- [ ] Monta agendamento sintético (sem consultar Django) e chama `enviar_inicial.handle()`
+- [ ] Retorna `{"status": "ok", "evolution_response": {...}}` ou HTTP 500 com detalhe do erro
+- [ ] Usado por `make test-send` para validar setup end-to-end após pareamento WhatsApp
+
 ---
 
 ## Bloco 8 — Ferramental
 
 ### 10.C.26 — `Makefile`
-- [ ] `make up` → `docker compose up -d --build`
-- [ ] `make down` → `docker compose down`
-- [ ] `make logs` → `docker compose logs -f --tail=200`
-- [ ] `make restart` → `docker compose restart worker`
-- [ ] `make test-send` → comando curl/python script que dispara um agendamento fake através do worker (rota interna de debug ou direto na Evolution) para validar setup
-- [ ] `make qrcode` (bônus) → abre/curl a rota da Evolution que retorna o QR da instância
+- [x] `make up` → `docker compose up -d --build`
+- [x] `make down` → `docker compose down`
+- [x] `make logs` → `docker compose logs -f --tail=200`
+- [x] `make restart` → `docker compose restart worker`
+- [x] `make test-send` → POST em `/debug/test-send` com agendamento sintético
+- [x] `make qrcode` → curl na rota da Evolution que retorna o QR da instância
+
+---
+
+## Bloco 9 — Testes e Simulação
+
+### 10.C.27 — Infraestrutura de testes
+- [ ] Adicionar ao `worker/requirements.txt`: `pytest>=8.0`, `pytest-asyncio>=0.23`, `fakeredis>=2.20`
+- [ ] Criar `worker/tests/__init__.py`
+- [ ] Criar `worker/pytest.ini`:
+  - [ ] `asyncio_mode = auto` (pytest-asyncio)
+  - [ ] `testpaths = tests`
+- [ ] Adicionar `make test` ao Makefile → `docker compose exec worker python -m pytest tests/ -v`
+- [ ] Adicionar `make demo` ao Makefile → sobe stack + aguarda healthcheck + dispara test-send + tails logs
+
+### 10.C.28 — Testes unitários dos módulos core
+- [ ] `worker/tests/test_logs.py`
+  - [ ] `telefone` curto (≤ 4 dígitos) não é mascarado
+  - [ ] `telefone` longo → `"****XXXX"`
+  - [ ] `Authorization` top-level → `"***"`
+  - [ ] `Authorization` em dict `headers` → `"***"`
+  - [ ] `correlation_id` injetado após `new_correlation_id()`
+  - [ ] `bind_correlation_id` substitui o valor anterior
+- [ ] `worker/tests/test_settings.py`
+  - [ ] `LOG_LEVEL` inválido → `ValidationError`
+  - [ ] `POLLING_INTERVAL_SECONDS=0` → `ValidationError`
+  - [ ] `DJANGO_API_BASE_URL` com barra final → armazenado sem barra
+- [ ] `worker/tests/test_payloads.py` *(implementar após 10.C.15 e 10.C.16)*
+  - [ ] `build_initial_list` → payload com exatamente 3 rows (CONFIRMAR, REMARCAR, JA_ENTREGUE)
+  - [ ] `build_initial_list` → nenhum campo contém URL
+  - [ ] `build_horarios_list` com 12 slots → payload com exatamente 10 rows
+  - [ ] `build_horarios_list` → `rowId` começa com `SLOT:`
+  - [ ] `build_horarios_list` → `title` em pt-BR (ex.: `"Seg 12/05 às 09h-11h"`)
+- [ ] `worker/tests/test_redis_queue.py` *(implementar após 10.C.13, usa fakeredis)*
+  - [ ] `is_duplicate_event` retorna `False` na 1ª chamada e `True` na 2ª com mesmo ID
+  - [ ] `mark_sent` / `was_sent` seguem mesmo padrão
+  - [ ] `incr_error` retorna 1, 2, 3 em chamadas consecutivas
+  - [ ] `reset_error` zera o contador
+- [ ] `worker/tests/test_on_response.py` *(implementar após 10.C.19, usa mocks)*
+  - [ ] `rowId=CONFIRMAR` → chama `post_webhook` com `tipo="CONFIRMAR"`
+  - [ ] `rowId=REMARCAR` → chama `enviar_slots.handle`
+  - [ ] `rowId=JA_ENTREGUE` → chama `post_webhook` com `tipo="JA_ENTREGUE"`
+  - [ ] `rowId=SLOT:2026-05-12T09:00:00-03:00` → chama `post_webhook` com `slot_escolhido` correto
+  - [ ] Texto livre 2x → reenvia lista inicial; na 3ª → `post_webhook` com `tipo="FALHA"`
+  - [ ] Evento duplicado (mesmo `event_id`) → não chama `post_webhook` segunda vez
+
+### 10.C.29 — Simulação visível end-to-end
+- [ ] Executar `make demo` com stack rodando e WhatsApp pareado
+- [ ] Verificar no terminal: log JSON com `correlation_id`, `telefone` mascarado, resposta da EvolutionAPI
+- [ ] Verificar no WhatsApp: mensagem List interativa recebida com 3 opções (CONFIRMAR / REMARCAR / JÁ ENTREGUEI)
+- [ ] Responder `CONFIRMAR` no WhatsApp e verificar log do webhook recebido pelo worker
+- [ ] Verificar que `make health` retorna `{"status":"ok","redis":"ok","evolution":"ok"}`
 
 ---
 

@@ -5,7 +5,7 @@
 # Uso: make <comando>
 # =============================================================================
 
-.PHONY: up down logs restart build test-send qrcode health shell-worker shell-redis ps
+.PHONY: up down logs restart build test-send qrcode health shell-worker shell-redis ps test demo
 
 # ---------------------------------------------------------------------------
 # Subir todos os serviços (rebuild automático)
@@ -86,6 +86,28 @@ test-send:
 		-H "Content-Type: application/json" \
 		-d '{"telefone":"5511999999999","nome":"Teste","data":"2026-01-01","hora":"14:00"}' \
 		| python -m json.tool
+
+# ---------------------------------------------------------------------------
+# Rodar testes unitários dentro do container worker
+# ---------------------------------------------------------------------------
+test:
+	docker compose exec worker python -m pytest tests/ -v
+
+# ---------------------------------------------------------------------------
+# Demo end-to-end — sobe stack, aguarda healthcheck e dispara mensagem de teste
+# Você verá os logs JSON com correlation_id, telefone mascarado e resposta da Evolution
+# ---------------------------------------------------------------------------
+demo:
+	@echo "=== [1/3] Subindo stack... ==="
+	@docker compose up -d --build
+	@echo "=== [2/3] Aguardando worker ficar healthy (max 90s)... ==="
+	@timeout 90 sh -c 'until docker compose exec worker curl -sf http://localhost:8000/health > /dev/null 2>&1; do sleep 3; done' \
+		|| (echo "ERRO: worker nao ficou healthy. Verifique: make ps && make logs" && exit 1)
+	@echo "=== [3/3] Stack pronta! Disparando mensagem de teste... ==="
+	@make test-send
+	@echo ""
+	@echo "=== Logs em tempo real (Ctrl+C para sair) ==="
+	@make logs-worker
 
 # ---------------------------------------------------------------------------
 # Limpar TUDO (containers + volumes) — CUIDADO: perde sessão WhatsApp
