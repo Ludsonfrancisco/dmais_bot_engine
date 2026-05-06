@@ -315,3 +315,105 @@
 - Commits pequenos e atômicos por subtarefa.
 - Variáveis sensíveis nunca commitadas — apenas `.env.example`.
 - Toda PR deve referenciar o item 10.C.x correspondente.
+
+---
+
+## Rodapé — Checklist 10.C.29: Simulação End-to-End
+
+> Execute cada etapa em ordem. Cole a saída de cada comando no chat para acompanhamento.
+
+### Etapa 1 — Preparar `.env`
+
+```bash
+cp .env.example .env
+```
+
+Preencha **obrigatoriamente** no `.env`:
+- [ ] `DJANGO_API_BASE_URL` — URL da API Django (ex.: `https://api.dmais.com.br`)
+- [ ] `DJANGO_API_TOKEN` — token de auth do Django
+- [ ] `EVOLUTION_API_KEY` — string segura (ex.: `minha-chave-123`)
+- [ ] `EVOLUTION_INSTANCE_NAME` — deixe `dmais` ou escolha outro nome
+
+> `REDIS_URL`, `EVOLUTION_API_URL`, `POLLING_INTERVAL_SECONDS` etc. ficam com os defaults.
+
+---
+
+### Etapa 2 — Subir a stack
+
+```bash
+make up
+```
+
+Aguarde ~30s e verifique:
+```bash
+make ps
+```
+
+- [ ] `evolution-api` → `healthy`
+- [ ] `redis` → `healthy`
+- [ ] `worker` → `healthy`
+
+> Se algum ficar `starting` por mais de 60s, cole o output de `make logs`.
+
+---
+
+### Etapa 3 — Parear WhatsApp via QRCode
+
+```bash
+make qrcode
+```
+
+- [ ] Resposta JSON contém campo `qrcode` ou `base64`
+- [ ] Abriu WhatsApp no celular → `Dispositivos conectados` → `Conectar dispositivo` → escaneou o QR
+- [ ] Rodou `make qrcode` novamente e o campo `state` está `open` (conectado)
+
+> Dica: se o QR vier em base64, acesse `http://localhost:8080/manager` no browser para ver o painel da EvolutionAPI.
+
+---
+
+### Etapa 4 — Disparar mensagem de teste
+
+Substitua `55119XXXXXXXX` pelo seu número real (com código do país):
+
+```bash
+curl -s -X POST \
+  "http://localhost:8000/debug/test-send" \
+  -H "Content-Type: application/json" \
+  -d '{"telefone":"55119XXXXXXXX","nome":"Teste","data":"2026-05-08","hora":"14:00"}' \
+  | python -m json.tool
+```
+
+- [ ] Resposta JSON contém `"status": "ok"` e `"evolution_response": {...}`
+- [ ] No celular chegou mensagem WhatsApp com lista de 3 opções (Confirmar / Remarcar / Já entreguei)
+
+---
+
+### Etapa 5 — Verificar logs do disparo
+
+```bash
+make logs-worker
+```
+
+- [ ] Log contém campo `correlation_id` (UUID)
+- [ ] Campo `telefone` aparece mascarado: `"****XXXX"` (apenas últimos 4 dígitos)
+- [ ] Log de `evolution.send` com `"level": "info"`
+
+---
+
+### Etapa 6 — Responder no WhatsApp e verificar webhook
+
+Toque em **Confirmar coleta** na mensagem recebida no celular.
+
+- [ ] Novo log aparece com `"event": "on_response.received"`
+- [ ] Log contém `"tipo": "CONFIRMAR"`
+- [ ] Log contém `"agendamento_id"`
+
+---
+
+### Etapa 7 — Health check final
+
+```bash
+make health
+```
+
+- [ ] Resposta: `{"status": "ok", "redis": "ok", "evolution": "ok"}`
