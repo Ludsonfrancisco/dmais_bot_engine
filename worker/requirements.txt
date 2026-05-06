@@ -1,0 +1,29 @@
+# =============================================================================
+# dmais_bot_engine — Dependências do Worker
+# =============================================================================
+# Versões pinadas com compatibilidade semver.
+# Atualizar com: pip-compile ou manualmente conforme necessário.
+# =============================================================================
+
+# --- Framework Web ---
+fastapi>=0.111,<1.0
+uvicorn[standard]>=0.30,<1.0
+
+# --- Cliente HTTP assíncrono ---
+httpx>=0.27,<1.0
+
+# --- Modelagem de dados e configuração ---
+pydantic>=2.7,<3.0
+pydantic-settings>=2.3,<3.0
+
+# --- Redis (cliente assíncrono) ---
+redis>=5.0,<6.0
+
+# --- Logging estruturado ---
+structlog>=24.1,<25.0
+
+# --- Carregamento de .env (fallback fora do Docker) ---
+python-dotenv>=1.0,<2.0
+
+# --- Retry com backoff exponencial ---
+tenacity>=8.3,<10.0

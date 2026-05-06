@@ -1,0 +1,268 @@
+# dmais_bot_engine
+
+> Motor local de disparo de mensagens WhatsApp para confirmação de coletas — Logística Reversa DMais.
+
+---
+
+## Visão Geral
+
+O `dmais_bot_engine` é um **motor autocontido**, orquestrado via Docker Compose, responsável por:
+
+1. **Buscar agendamentos pendentes** na API Django (polling periódico).
+2. **Enviar mensagens WhatsApp** (List Messages interativas) via EvolutionAPI (Baileys).
+3. **Receber respostas** dos clientes (webhooks do Evolution) e rotear de volta ao Django.
+4. **Gerenciar filas e idempotência** com Redis.
+
+O motor **não possui banco de dados próprio** — todo estado durável vive na API Django. O Redis serve apenas como memória operacional (filas, controle de duplicidade, rate limiting).
+
+### Arquitetura
+
+```
+┌─────────────────────┐             ┌───────────────────────┐
+│  Django API (ext.)   │             │  WhatsApp (cliente)   │
+│  /pendentes-recolha/ │             │                       │
+│  /whatsapp-webhook/  │             └───────────┬───────────┘
+└──────────┬──────────┘                         │ Baileys
+           │ HTTPS + Token                      │
+┌──────────▼────────────────────────────────────▼───────────┐
+│                Docker Compose (host local)                 │
+│                                                            │
+│  ┌────────────┐  ┌─────────────────┐  ┌────────────────┐  │
+│  │  worker    │◄─┤  evolution-api  │  │  redis         │  │
+│  │  FastAPI + │  │  :8080          │  │  filas/idempt. │  │
+│  │  poller    │─►│  (Baileys)      │  │  rate-limit    │  │
+│  └────────────┘  └─────────────────┘  └────────────────┘  │
+└────────────────────────────────────────────────────────────┘
+```
+
+Para detalhes completos, consulte [PRD.md](./PRD.md).
+
+---
+
+## Pré-requisitos
+
+| Ferramenta        | Versão mínima | Verificar                |
+|-------------------|---------------|--------------------------|
+| Docker            | 24.x          | `docker --version`       |
+| Docker Compose    | v2.x          | `docker compose version` |
+| Make (opcional)   | qualquer      | `make --version`         |
+| Git               | 2.x           | `git --version`          |
+
+---
+
+## Setup Rápido
+
+### 1. Clonar o repositório
+
+```bash
+git clone <url-do-repo> dmais_bot_engine
+cd dmais_bot_engine
+```
+
+### 2. Configurar variáveis de ambiente
+
+```bash
+cp .env.example .env
+```
+
+Edite o `.env` e preencha os valores reais:
+
+| Variável                    | Descrição                                     | Default                     |
+|-----------------------------|-----------------------------------------------|-----------------------------|
+| `DJANGO_API_BASE_URL`       | URL base da API Django (sem barra final)      | —                           |
+| `DJANGO_API_TOKEN`          | Token de autenticação `Authorization: Token`  | —                           |
+| `EVOLUTION_API_URL`         | URL interna da EvolutionAPI                   | `http://evolution-api:8080` |
+| `EVOLUTION_API_KEY`         | API key global da EvolutionAPI                | —                           |
+| `EVOLUTION_INSTANCE_NAME`   | Nome da instância/sessão WhatsApp             | `dmais`                     |
+| `REDIS_URL`                 | URL de conexão Redis                          | `redis://redis:6379/0`      |
+| `POLLING_INTERVAL_SECONDS`  | Intervalo de polling (segundos)               | `60`                        |
+| `MAX_MESSAGES_PER_MINUTE`   | Limite de envios por minuto                   | `30`                        |
+| `LOG_LEVEL`                 | Nível de log (`DEBUG`/`INFO`/`WARNING`/`ERROR`)| `INFO`                     |
+| `WORKER_HTTP_PORT`          | Porta HTTP do worker (FastAPI)                | `8000`                      |
+
+### 3. Subir os serviços
+
+```bash
+make up
+# ou: docker compose up -d --build
+```
+
+### 4. Verificar saúde dos containers
+
+```bash
+make ps
+# ou: docker compose ps
+```
+
+Todos os serviços devem estar com status `healthy` em até 60 segundos.
+
+---
+
+## Pareamento WhatsApp via QRCode
+
+O pareamento conecta a EvolutionAPI a um número de WhatsApp real via QRCode.
+
+### Passo a passo
+
+1. **Suba os serviços** (se ainda não estiver rodando):
+   ```bash
+   make up
+   ```
+
+2. **Crie a instância** (apenas na primeira vez):
+   ```bash
+   curl -s -X POST \
+     "http://localhost:8080/instance/create" \
+     -H "apikey: SUA_API_KEY" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "instanceName": "dmais",
+       "qrcode": true
+     }' | python -m json.tool
+   ```
+
+3. **Obtenha o QRCode** para escanear:
+   ```bash
+   make qrcode
+   # ou:
+   curl -s -X GET \
+     "http://localhost:8080/instance/connect/dmais" \
+     -H "apikey: SUA_API_KEY" | python -m json.tool
+   ```
+   - A resposta terá um campo `base64` com a imagem do QR.
+   - Copie o valor base64 e decodifique (ou use o painel web da Evolution se habilitado).
+
+4. **Escaneie o QRCode** com o WhatsApp do número que será usado para enviar as mensagens:
+   - Abra o WhatsApp → Dispositivos conectados → Conectar dispositivo → Escaneie o QR.
+
+5. **Verifique a conexão**:
+   ```bash
+   curl -s -X GET \
+     "http://localhost:8080/instance/connectionState/dmais" \
+     -H "apikey: SUA_API_KEY" | python -m json.tool
+   ```
+   - O campo `state` deve ser `"open"`.
+
+> **⚠️ Importante:** A sessão WhatsApp é persistida no volume `evolution-instances`. **Não apague este volume**, ou será necessário parear novamente.
+
+---
+
+## Comandos do Makefile
+
+| Comando           | Descrição                                          |
+|-------------------|----------------------------------------------------|
+| `make up`         | Sobe todos os serviços (com rebuild)               |
+| `make down`       | Para containers (volumes preservados)              |
+| `make logs`       | Logs em tempo real (últimas 200 linhas)            |
+| `make logs-worker`| Logs apenas do worker                              |
+| `make restart`    | Reinicia apenas o worker                           |
+| `make build`      | Rebuild sem cache                                  |
+| `make ps`         | Status dos containers e healthchecks               |
+| `make health`     | Healthcheck manual do worker                       |
+| `make shell-worker`| Shell bash dentro do container worker             |
+| `make shell-redis`| Redis CLI dentro do container Redis                |
+| `make qrcode`     | Obtém QRCode de pareamento da instância            |
+| `make test-send`  | Envia mensagem de teste para validar setup         |
+| `make clean`      | **⚠️ CUIDADO:** Remove tudo incluindo volumes      |
+
+---
+
+## Estrutura do Projeto
+
+```
+dmais_bot_engine/
+├── .env.example              # Template de variáveis de ambiente
+├── .gitignore                # Python + Docker + sensíveis
+├── docker-compose.yml        # 3 serviços: evolution-api, redis, worker
+├── Makefile                  # Atalhos operacionais
+├── PRD.md                    # Product Requirements Document
+├── TASKS.md                  # Guia de execução Sprint C (checkboxes)
+├── README.md                 # Este arquivo
+├── scripts/
+│   └── setup_webhook.sh      # Configuração idempotente do webhook
+└── worker/
+    ├── Dockerfile            # python:3.11-slim + uvicorn
+    ├── requirements.txt      # Dependências pinadas
+    ├── __init__.py           # Pacote principal
+    ├── settings.py           # Variáveis de ambiente (pydantic-settings)
+    ├── logs.py               # structlog + correlation_id
+    ├── api_client.py         # Cliente HTTP para Django (httpx + tenacity)
+    ├── redis_queue.py        # Filas, idempotência, rate-limit (Redis)
+    ├── evolution_client.py   # Cliente EvolutionAPI + token bucket
+    ├── main.py               # FastAPI + polling loop
+    ├── payloads/
+    │   ├── __init__.py
+    │   ├── list_initial.py   # Payload da lista inicial (3 opções)
+    │   └── list_horarios.py  # Payload da lista de horários (até 10 slots)
+    └── handlers/
+        ├── __init__.py
+        ├── enviar_inicial.py # Handler: envio da mensagem inicial
+        ├── enviar_slots.py   # Handler: envio de horários (REMARCAR)
+        ├── on_response.py    # Handler: webhook do Evolution
+        └── on_timeout.py     # Handler: timeout de agendamento
+```
+
+---
+
+## Troubleshooting
+
+### Container `evolution-api` não fica healthy
+
+```bash
+docker compose logs evolution-api --tail=50
+```
+- Verifique se `EVOLUTION_API_KEY` está definida no `.env`.
+- A EvolutionAPI pode levar ~30s para inicializar. Aguarde.
+
+### Worker não conecta ao Redis
+
+```bash
+docker compose exec worker python -c "import redis; r=redis.from_url('redis://redis:6379/0'); print(r.ping())"
+```
+- Verifique se o serviço `redis` está `healthy` (`make ps`).
+- Confirme que `REDIS_URL` no `.env` aponta para `redis://redis:6379/0`.
+
+### Sessão WhatsApp desconectou
+
+```bash
+make qrcode
+```
+- Escaneie novamente com o WhatsApp.
+- Se o QR não aparece, reinicie a Evolution: `docker compose restart evolution-api`.
+
+### Worker em loop de erro
+
+```bash
+make logs-worker
+```
+- Logs em JSON com `correlation_id` — busque o ID do fluxo com problema.
+- Verifique se `DJANGO_API_BASE_URL` e `DJANGO_API_TOKEN` estão corretos.
+- A API Django deve estar acessível de dentro do container.
+
+### Limpar tudo e recomeçar
+
+```bash
+make clean  # ⚠️ Perde sessão WhatsApp e dados do Redis
+make up
+```
+
+### Backup de volumes (sessão WhatsApp)
+
+```bash
+# Exportar
+docker run --rm -v dmais_evolution_instances:/data -v $(pwd):/backup \
+  alpine tar czf /backup/evolution-instances-backup.tar.gz -C /data .
+
+# Restaurar
+docker run --rm -v dmais_evolution_instances:/data -v $(pwd):/backup \
+  alpine tar xzf /backup/evolution-instances-backup.tar.gz -C /data
+```
+
+---
+
+## Referências
+
+- [PRD.md](./PRD.md) — Documento de requisitos completo.
+- [TASKS.md](./TASKS.md) — Guia de execução Sprint C.
+- [EvolutionAPI Docs](https://doc.evolution-api.com/) — Documentação oficial.
+- [FastAPI Docs](https://fastapi.tiangolo.com/) — Framework do worker.

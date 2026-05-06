@@ -1,0 +1,66 @@
+# ============================================================
+# dmais_bot_engine — .gitignore (Python + Docker)
+# ============================================================
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+*.manifest
+*.spec
+
+# ---------- Virtual envs ----------
+venv/
+.venv/
+ENV/
+env/
+
+# ---------- IDE ----------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# ---------- Testes / Coverage ----------
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# ---------- Dotenv (variáveis sensíveis) ----------
+.env
+.env.local
+.env.production
+
+# ---------- Docker ----------
+# Não ignorar docker-compose.yml nem Dockerfile
+# Ignorar volumes locais que porventura existam fora do compose
+docker-volumes/
+
+# ---------- OS ----------
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ---------- Logs ----------
+*.log
+logs/
+
+# ---------- Misc ----------
+*.bak
+*.tmp
