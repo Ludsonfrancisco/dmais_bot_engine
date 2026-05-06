@@ -1,19 +1,24 @@
-"""
-worker.handlers.enviar_inicial
-===============================
-Handler para envio da List Message inicial de confirmação de coleta.
+from worker.evolution_client import evolution_client
+from worker.logs import get_logger, new_correlation_id
+from worker.payloads.list_initial import build_initial_list
+from worker.redis_queue import redis_queue
 
-Referência: PRD.md §4.1 — Fluxo principal (disparo inicial).
+logger = get_logger(__name__)
 
-Funcionalidades planejadas:
-    - async handle(agendamento: dict) -> None
-    - Fluxo:
-        1. Verifica was_sent(agendamento_id) no Redis → skip se já enviado.
-        2. Monta payload via payloads.list_initial.build_initial_list().
-        3. Chama evolution_client.send_list_message(payload).
-        4. Marca sent:<agendamento_id> no Redis (TTL 24h).
-    - Gera correlation_id único por agendamento.
-    - Log estruturado de cada etapa.
-"""
 
-# TODO: Implementar na task 10.C.17
+async def handle(agendamento: dict) -> None:
+    """Envia List Message inicial para confirmação de coleta (PRD §4.1)."""
+    agendamento_id = agendamento["agendamento_id"]
+    new_correlation_id()  # correlation_id único por agendamento; injetado nos logs via contextvar
+
+    logger.info("enviar_inicial.start", agendamento_id=agendamento_id)
+
+    if await redis_queue.was_sent(agendamento_id):
+        logger.info("enviar_inicial.skip", agendamento_id=agendamento_id)
+        return
+
+    payload = build_initial_list(agendamento)
+    await evolution_client.send_list_message(payload)
+    await redis_queue.mark_sent(agendamento_id)
+
+    logger.info("enviar_inicial.done", agendamento_id=agendamento_id)

@@ -120,56 +120,56 @@
 - [x] Garantir que payloads brutos do Evolution só apareçam em `level=DEBUG` (LGPD)
 
 ### 10.C.11 — `worker/api_client.py` (Django)
-- [ ] Cliente `httpx.AsyncClient` reaproveitável
-- [ ] Header `Authorization: Token {DJANGO_API_TOKEN}` em todas as chamadas
-- [ ] Decorador `tenacity.retry` (backoff exponencial, max 5 tentativas, retry em `httpx.HTTPError` e 5xx)
-- [ ] Métodos:
-  - [ ] `async def listar_pendentes(page: int) -> dict`
-  - [ ] `async def listar_slots(agendamento_id: int) -> list[dict]`
-  - [ ] `async def post_webhook(payload: dict) -> None`
-- [ ] Logging de cada chamada com `correlation_id`
+- [x] Cliente `httpx.AsyncClient` reaproveitável
+- [x] Header `Authorization: Token {DJANGO_API_TOKEN}` em todas as chamadas
+- [x] Decorador `tenacity.retry` (backoff exponencial, max 5 tentativas, retry em 5xx e erros de rede; 4xx não retentado)
+- [x] Métodos:
+  - [x] `async def listar_pendentes(page: int) -> dict`
+  - [x] `async def listar_slots(agendamento_id: int) -> list[dict]`
+  - [x] `async def post_webhook(payload: dict) -> None`
+- [x] Logging de cada chamada com `correlation_id`
 
 ### 10.C.13 — `worker/redis_queue.py`
-- [ ] Conexão Redis assíncrona (`redis.asyncio`)
-- [ ] Função `is_duplicate_event(event_id) -> bool` (`SET evt:<id> 1 NX EX 86400`)
-- [ ] Função `mark_sent(agendamento_id)` / `was_sent(agendamento_id)` com TTL 24h
-- [ ] Contador de erros: `incr_error(chat_id) -> int` / `reset_error(chat_id)`
-- [ ] Funções utilitárias para fila de retry (LPUSH/BRPOP) — opcional para futuro
+- [x] Conexão Redis assíncrona (`redis.asyncio`)
+- [x] Função `is_duplicate_event(event_id) -> bool` (`SET evt:<id> 1 NX EX 86400`)
+- [x] Função `mark_sent(agendamento_id)` / `was_sent(agendamento_id)` com TTL 24h
+- [x] Contador de erros: `incr_error(chat_id) -> int` / `reset_error(chat_id)`
+- [x] Funções utilitárias para fila de retry (LPUSH/BRPOP) — opcional para futuro
 
 ### 10.C.14 — `worker/evolution_client.py`
-- [ ] Cliente `httpx.AsyncClient` para EvolutionAPI
-- [ ] Header `apikey: {EVOLUTION_API_KEY}`
-- [ ] **Rate limit token bucket** baseado em Redis (chaves `ratelimit:bucket`, `ratelimit:last_refill`)
-- [ ] Método `acquire()` que aguarda assincronamente até haver token disponível
-- [ ] Método `send_list_message(payload: dict) -> dict` que chama `acquire()` antes de POST
-- [ ] Tratamento de erros e logging
-- [ ] Capacidade configurável via `MAX_MESSAGES_PER_MINUTE`
+- [x] Cliente `httpx.AsyncClient` para EvolutionAPI
+- [x] Header `apikey: {EVOLUTION_API_KEY}`
+- [x] **Rate limit token bucket** baseado em Redis (chaves `ratelimit:bucket`, `ratelimit:last_refill`)
+- [x] Método `acquire()` que aguarda assincronamente até haver token disponível
+- [x] Método `send_list_message(payload: dict) -> dict` que chama `acquire()` antes de POST
+- [x] Tratamento de erros e logging
+- [x] Capacidade configurável via `MAX_MESSAGES_PER_MINUTE`
 
 ---
 
 ## Bloco 5 — Payloads
 
 ### 10.C.15 — `worker/payloads/list_initial.py`
-- [ ] Função `build_initial_list(agendamento: dict) -> dict`
-- [ ] Monta payload conforme PRD §6.1 (3 rows: CONFIRMAR, REMARCAR, JA_ENTREGUE)
-- [ ] Validação: nunca incluir URLs no texto
-- [ ] Tipos via `pydantic` (opcional mas recomendado)
+- [x] Função `build_initial_list(agendamento: dict) -> dict`
+- [x] Monta payload conforme PRD §6.1 (3 rows: CONFIRMAR, REMARCAR, JA_ENTREGUE)
+- [x] Validação: nunca incluir URLs no texto
+- [x] Tipos via `pydantic` (opcional mas recomendado) — pure function + dict, sem overhead pydantic
 
 ### 10.C.16 — `worker/payloads/list_horarios.py`
-- [ ] Função `build_horarios_list(agendamento: dict, slots: list[dict]) -> dict`
-- [ ] Limita a 10 slots máximo (`slots[:10]`)
-- [ ] `rowId` = `SLOT:<iso8601>`
-- [ ] Formata `title` legível em pt-BR (ex.: `"Seg 12/05 às 09h-11h"`)
+- [x] Função `build_horarios_list(agendamento: dict, slots: list[dict]) -> dict`
+- [x] Limita a 10 slots máximo (`slots[:10]`)
+- [x] `rowId` = `SLOT:<iso8601>`
+- [x] Formata `title` legível em pt-BR (ex.: `"Seg 12/05 às 09h-11h"`)
 
 ---
 
 ## Bloco 6 — Handlers de fluxo
 
 ### 10.C.17 — Handler `enviar_inicial`
-- [ ] Arquivo `worker/handlers/enviar_inicial.py`
-- [ ] Função `async def handle(agendamento: dict) -> None`
-- [ ] Verifica `was_sent`, monta payload via `list_initial`, chama `evolution_client.send_list_message`, marca `sent:<id>`
-- [ ] Logs com `correlation_id` único por agendamento
+- [x] Arquivo `worker/handlers/enviar_inicial.py`
+- [x] Função `async def handle(agendamento: dict) -> None`
+- [x] Verifica `was_sent`, monta payload via `list_initial`, chama `evolution_client.send_list_message`, marca `sent:<id>`
+- [x] Logs com `correlation_id` único por agendamento
 
 ### 10.C.18 — Handler `enviar_slots`
 - [ ] Arquivo `worker/handlers/enviar_slots.py`

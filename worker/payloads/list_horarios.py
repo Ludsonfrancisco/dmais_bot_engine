@@ -1,31 +1,44 @@
-"""
-worker.payloads.list_horarios
-==============================
-Montagem do payload da List Message de horários disponíveis para remarcação.
+from datetime import datetime
 
-Referência: PRD.md §6.2 — List Message de horários.
+from worker.logs import get_logger
 
-Funcionalidades planejadas:
-    - build_horarios_list(agendamento: dict, slots: list[dict]) -> dict
-    - Limita a 10 slots máximo (limite do WhatsApp por seção).
-    - rowId = "SLOT:<iso8601>" para parsing do horário escolhido.
-    - Formata title legível em pt-BR: "Seg 12/05 às 09h-11h".
-    - Campos dinâmicos: number do agendamento.
+logger = get_logger(__name__)
 
-Payload de saída (enviado à EvolutionAPI):
-    {
-        "number": "55<DDD><numero>",
+_DIAS = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+
+
+def _format_title(inicio: str, fim: str) -> str:
+    dt_i = datetime.fromisoformat(inicio)
+    dt_f = datetime.fromisoformat(fim)
+    dia = _DIAS[dt_i.weekday()]
+    data = dt_i.strftime("%d/%m")
+    return f"{dia} {data} às {dt_i.strftime('%Hh')}-{dt_f.strftime('%Hh')}"
+
+
+def build_horarios_list(agendamento: dict, slots: list[dict]) -> dict:
+    """Monta payload da List Message de horários (PRD §6.2). Máx 10 slots."""
+    limited = slots[:10]
+
+    rows = [
+        {
+            "rowId": f"SLOT:{slot['inicio']}",
+            "title": _format_title(slot["inicio"], slot["fim"]),
+            "description": "",
+        }
+        for slot in limited
+    ]
+
+    logger.debug(
+        "payload.horarios_list.built",
+        agendamento_id=agendamento.get("agendamento_id"),
+        num_slots=len(rows),
+    )
+
+    return {
+        "number": agendamento["telefone"],
         "title": "Escolha um novo horário",
         "description": "Selecione um dos horários disponíveis abaixo:",
         "buttonText": "Ver horários",
         "footerText": "DMais Logística Reversa",
-        "sections": [{
-            "title": "Horários disponíveis",
-            "rows": [
-                { "rowId": "SLOT:2026-05-12T09:00:00-03:00", "title": "Seg 12/05 às 09h-11h", "description": "" }
-            ]
-        }]
+        "sections": [{"title": "Horários disponíveis", "rows": rows}],
     }
-"""
-
-# TODO: Implementar na task 10.C.16
