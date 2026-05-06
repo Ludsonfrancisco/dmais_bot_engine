@@ -115,5 +115,15 @@ class EvolutionClient:
         logger.debug("evolution.send.ok", status=r.status_code)
         return r.json()
 
+    @_retry
+    async def send_text_message(self, telefone: str, text: str) -> dict:
+        await self.acquire()
+        url = f"{settings.EVOLUTION_API_URL}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
+        logger.info("evolution.send_text", number=telefone)
+        r = await self._ensure_client().post(url, json={"number": telefone, "text": text})
+        r.raise_for_status()
+        logger.debug("evolution.send_text.ok", status=r.status_code)
+        return r.json()
+
 
 evolution_client = EvolutionClient()

@@ -172,46 +172,46 @@
 - [x] Logs com `correlation_id` único por agendamento
 
 ### 10.C.18 — Handler `enviar_slots`
-- [ ] Arquivo `worker/handlers/enviar_slots.py`
-- [ ] Função `async def handle(agendamento_id: int, telefone: str) -> None`
-- [ ] Chama `api_client.listar_slots`, monta payload via `list_horarios`, envia via Evolution
-- [ ] Trata caso "sem slots disponíveis" → envia mensagem texto neutra E posta `FALHA` no Django
+- [x] Arquivo `worker/handlers/enviar_slots.py`
+- [x] Função `async def handle(agendamento_id: int, telefone: str) -> None`
+- [x] Chama `api_client.listar_slots`, monta payload via `list_horarios`, envia via Evolution
+- [x] Trata caso "sem slots disponíveis" → envia mensagem texto neutra E posta `FALHA` no Django
 
 ### 10.C.19 — Handler `on_response` (webhook)
-- [ ] Arquivo `worker/handlers/on_response.py`
-- [ ] Função `async def handle(evolution_event: dict) -> None`
-- [ ] Idempotência via `is_duplicate_event`
-- [ ] Classifica evento:
-  - [ ] List reply com `rowId` válido (`CONFIRMAR`, `REMARCAR`, `JA_ENTREGUE`, `SLOT:*`)
-  - [ ] Texto livre / opção desconhecida
-- [ ] Para `REMARCAR`: chama `enviar_slots`
-- [ ] Para `SLOT:*`: extrai ISO e posta no Django
-- [ ] Para inválidos: incrementa erro, envia fallback, reenvia inicial; ao atingir 3, posta `FALHA`
-- [ ] Sempre posta evento canônico no Django
+- [x] Arquivo `worker/handlers/on_response.py`
+- [x] Função `async def handle(evolution_event: dict) -> None`
+- [x] Idempotência via `is_duplicate_event`
+- [x] Classifica evento:
+  - [x] List reply com `rowId` válido (`CONFIRMAR`, `REMARCAR`, `JA_ENTREGUE`, `SLOT:*`)
+  - [x] Texto livre / opção desconhecida
+- [x] Para `REMARCAR`: chama `enviar_slots`
+- [x] Para `SLOT:*`: extrai ISO e posta no Django
+- [x] Para inválidos: incrementa erro, envia fallback, reenvia inicial; ao atingir 3, posta `FALHA`
+- [x] Sempre posta evento canônico no Django
 
 ### 10.C.20 — Handler `on_timeout`
-- [ ] Arquivo `worker/handlers/on_timeout.py`
-- [ ] Função `async def handle(agendamento_id: int) -> None`
-- [ ] Acionado pelo polling quando o Django sinaliza estado `TIMEOUT`
-- [ ] Posta evento `FALHA` no Django e limpa contadores Redis
+- [x] Arquivo `worker/handlers/on_timeout.py`
+- [x] Função `async def handle(agendamento_id: int) -> None`
+- [x] Acionado pelo polling quando o Django sinaliza estado `TIMEOUT`
+- [x] Posta evento `FALHA` no Django e limpa contadores Redis
 
 ---
 
 ## Bloco 7 — Orquestração
 
 ### 10.C.21 — `worker/main.py`
-- [ ] Instanciar `FastAPI(title="dmais_bot_engine")`
-- [ ] Lifespan que sobe o **poller** como task assíncrona em background
-- [ ] Endpoint `POST /webhook/evolution` → `on_response.handle`
-- [ ] Endpoint `GET /health` → ver 10.C.24
-- [ ] Endpoint `POST /debug/test-send` → ver 10.C.25
-- [ ] Loop de polling:
-  - [ ] `while True: page = 1; iterar paginação completa via campo `next``
-  - [ ] Para cada agendamento com `status == "PENDENTE_CONFIRMACAO"` → `enviar_inicial.handle(agendamento)`
-  - [ ] Para cada agendamento com `status == "TIMEOUT"` → `on_timeout.handle(agendamento_id)`
-  - [ ] Qualquer outro status: ignorar silenciosamente
-  - [ ] Tratar exceções para que o loop **nunca morra** (logar erro e continuar)
-- [ ] Shutdown graceful (fecha clients httpx e redis)
+- [x] Instanciar `FastAPI(title="dmais_bot_engine")`
+- [x] Lifespan que sobe o **poller** como task assíncrona em background
+- [x] Endpoint `POST /webhook/evolution` → `on_response.handle`
+- [x] Endpoint `GET /health` → ver 10.C.24
+- [x] Endpoint `POST /debug/test-send` → ver 10.C.25
+- [x] Loop de polling:
+  - [x] `while True: page = 1; iterar paginação completa via campo `next``
+  - [x] Para cada agendamento com `status == "PENDENTE_CONFIRMACAO"` → `enviar_inicial.handle(agendamento)`
+  - [x] Para cada agendamento com `status == "TIMEOUT"` → `on_timeout.handle(agendamento_id)`
+  - [x] Qualquer outro status: ignorar silenciosamente
+  - [x] Tratar exceções para que o loop **nunca morra** (logar erro e continuar)
+- [x] Shutdown graceful (fecha clients httpx e redis)
 
 ### 10.C.22 — Configurar webhook da EvolutionAPI
 - [x] Webhook global configurado via variáveis de ambiente no `docker-compose.yml`:
@@ -221,15 +221,15 @@
 - [x] Finalizar `scripts/setup_webhook.sh`: curl ativado para `POST /webhook/set/{instance}` com validação de HTTP code (útil para forçar reconfiguração manual sem restartar o compose)
 
 ### 10.C.24 — Endpoint `/health`
-- [ ] `GET /health` retorna 200 com `{"status":"ok","redis":"<ok|fail>","evolution":"<ok|fail>"}`
-- [ ] Faz ping no Redis e GET leve na Evolution
-- [ ] Usado pelo healthcheck do `docker-compose.yml`
+- [x] `GET /health` retorna 200 com `{"status":"ok","redis":"<ok|fail>","evolution":"<ok|fail>"}`
+- [x] Faz ping no Redis e GET leve na Evolution
+- [x] Usado pelo healthcheck do `docker-compose.yml`
 
 ### 10.C.25 — Endpoint `/debug/test-send`
-- [ ] `POST /debug/test-send` aceita `{"telefone": str, "nome": str, "data": str, "hora": str}`
-- [ ] Monta agendamento sintético (sem consultar Django) e chama `enviar_inicial.handle()`
-- [ ] Retorna `{"status": "ok", "evolution_response": {...}}` ou HTTP 500 com detalhe do erro
-- [ ] Usado por `make test-send` para validar setup end-to-end após pareamento WhatsApp
+- [x] `POST /debug/test-send` aceita `{"telefone": str, "nome": str, "data": str, "hora": str}`
+- [x] Monta agendamento sintético (sem consultar Django) e chama `enviar_inicial.handle()`
+- [x] Retorna `{"status": "ok", "evolution_response": {...}}` ou HTTP 500 com detalhe do erro
+- [x] Usado por `make test-send` para validar setup end-to-end após pareamento WhatsApp
 
 ---
 
@@ -248,13 +248,13 @@
 ## Bloco 9 — Testes e Simulação
 
 ### 10.C.27 — Infraestrutura de testes
-- [ ] Adicionar ao `worker/requirements.txt`: `pytest>=8.0`, `pytest-asyncio>=0.23`, `fakeredis>=2.20`
-- [ ] Criar `worker/tests/__init__.py`
-- [ ] Criar `worker/pytest.ini`:
-  - [ ] `asyncio_mode = auto` (pytest-asyncio)
-  - [ ] `testpaths = tests`
-- [ ] Adicionar `make test` ao Makefile → `docker compose exec worker python -m pytest tests/ -v`
-- [ ] Adicionar `make demo` ao Makefile → sobe stack + aguarda healthcheck + dispara test-send + tails logs
+- [x] Adicionar ao `worker/requirements.txt`: `pytest>=8.0`, `pytest-asyncio>=0.23`, `fakeredis>=2.20`
+- [x] Criar `worker/tests/__init__.py`
+- [x] Criar `worker/pytest.ini`:
+  - [x] `asyncio_mode = auto` (pytest-asyncio)
+  - [x] `testpaths = tests`
+- [x] Adicionar `make test` ao Makefile → `docker compose exec worker python -m pytest tests/ -v`
+- [x] Adicionar `make demo` ao Makefile → sobe stack + aguarda healthcheck + dispara test-send + tails logs
 
 ### 10.C.28 — Testes unitários dos módulos core
 - [ ] `worker/tests/test_logs.py`
@@ -301,7 +301,7 @@
 - [ ] `docker compose up -d` sobe tudo sem erro e healthchecks ficam `healthy`
 - [ ] Pareamento WhatsApp funcional via QRCode
 - [ ] Polling consome `/pendentes-recolha/` paginado e dispara List Messages
-- [ ] Rate limit não permite mais de 30 msg/min em testes de carga local
+- [ ] Rate limit não permite mais de 5 msg/min em testes de carga local e usar sleep randomico, nao ser a cada 12 seg cravados.
 - [ ] Webhook idempotente (reenviar mesmo evento 2x não duplica chamada ao Django)
 - [ ] Resposta `REMARCAR` gera List de slots
 - [ ] Texto livre 3x consecutivas → `FALHA` ao Django

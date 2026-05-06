@@ -1,3 +1,5 @@
+import json as _json
+
 import redis.asyncio as aioredis
 
 from worker.logs import get_logger
@@ -63,6 +65,43 @@ class RedisQueue:
 
     async def reset_error(self, chat_id: str) -> None:
         await self._ensure_client().delete(f"errors:{chat_id}")
+
+    # ------------------------------------------------------------------
+    # Cache de agendamento por telefone  (on_response needs agendamento_id)
+    # chave: agendamento:<telefone>  — JSON do dict completo
+    # ------------------------------------------------------------------
+
+    async def store_agendamento(self, telefone: str, agendamento: dict) -> None:
+        agendamento_id = agendamento.get("agendamento_id")
+        client = self._ensure_client()
+        pipe = client.pipeline()
+        pipe.set(f"agendamento:{telefone}", _json.dumps(agendamento), ex=_TTL)
+        if agendamento_id is not None:
+            # índice reverso: agendamento_id → telefone (usado por on_timeout)
+            pipe.set(f"agendamento_id:{agendamento_id}", telefone, ex=_TTL)
+        await pipe.execute()
+
+    async def get_agendamento(self, telefone: str) -> dict | None:
+        val = await self._ensure_client().get(f"agendamento:{telefone}")
+        return _json.loads(val) if val else None
+
+    async def get_telefone_by_agendamento_id(self, agendamento_id: int) -> str | None:
+        return await self._ensure_client().get(f"agendamento_id:{agendamento_id}")
+
+    async def clear_sent(self, agendamento_id: int) -> None:
+        await self._ensure_client().delete(f"sent:{agendamento_id}")
+
+    async def clear_agendamento(self, telefone: str) -> None:
+        agendamento_id_val = None
+        data = await self._ensure_client().get(f"agendamento:{telefone}")
+        if data:
+            agendamento_id_val = _json.loads(data).get("agendamento_id")
+        client = self._ensure_client()
+        pipe = client.pipeline()
+        pipe.delete(f"agendamento:{telefone}")
+        if agendamento_id_val is not None:
+            pipe.delete(f"agendamento_id:{agendamento_id_val}")
+        await pipe.execute()
 
     # ------------------------------------------------------------------
     # Fila de retry  (futuro — PRD §7)

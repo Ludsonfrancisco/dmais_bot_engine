@@ -18,6 +18,10 @@ def bind_correlation_id(cid: str) -> None:
     _correlation_id_var.set(cid)
 
 
+def get_correlation_id() -> str:
+    return _correlation_id_var.get("")
+
+
 def _inject_correlation_id(logger: Any, method_name: str, event_dict: dict) -> dict:
     cid = _correlation_id_var.get("")
     if cid:

@@ -20,5 +20,6 @@ async def handle(agendamento: dict) -> None:
     payload = build_initial_list(agendamento)
     await evolution_client.send_list_message(payload)
     await redis_queue.mark_sent(agendamento_id)
+    await redis_queue.store_agendamento(agendamento["telefone"], agendamento)
 
     logger.info("enviar_inicial.done", agendamento_id=agendamento_id)
