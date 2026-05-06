@@ -1,0 +1,42 @@
+import pytest
+import fakeredis.aioredis
+
+from worker.redis_queue import RedisQueue
+
+
+@pytest.fixture
+def rq():
+    q = RedisQueue()
+    q._client = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    return q
+
+
+async def test_is_duplicate_event_first_call_returns_false(rq):
+    assert await rq.is_duplicate_event("evt-001") is False
+
+
+async def test_is_duplicate_event_second_call_returns_true(rq):
+    await rq.is_duplicate_event("evt-002")
+    assert await rq.is_duplicate_event("evt-002") is True
+
+
+async def test_was_sent_false_before_mark(rq):
+    assert await rq.was_sent(999) is False
+
+
+async def test_mark_sent_then_was_sent_true(rq):
+    await rq.mark_sent(42)
+    assert await rq.was_sent(42) is True
+
+
+async def test_incr_error_increments_consecutively(rq):
+    assert await rq.incr_error("chat-1") == 1
+    assert await rq.incr_error("chat-1") == 2
+    assert await rq.incr_error("chat-1") == 3
+
+
+async def test_reset_error_clears_counter(rq):
+    await rq.incr_error("chat-2")
+    await rq.incr_error("chat-2")
+    await rq.reset_error("chat-2")
+    assert await rq.incr_error("chat-2") == 1

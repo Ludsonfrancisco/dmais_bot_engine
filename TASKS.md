@@ -257,35 +257,35 @@
 - [x] Adicionar `make demo` ao Makefile → sobe stack + aguarda healthcheck + dispara test-send + tails logs
 
 ### 10.C.28 — Testes unitários dos módulos core
-- [ ] `worker/tests/test_logs.py`
-  - [ ] `telefone` curto (≤ 4 dígitos) não é mascarado
-  - [ ] `telefone` longo → `"****XXXX"`
-  - [ ] `Authorization` top-level → `"***"`
-  - [ ] `Authorization` em dict `headers` → `"***"`
-  - [ ] `correlation_id` injetado após `new_correlation_id()`
-  - [ ] `bind_correlation_id` substitui o valor anterior
-- [ ] `worker/tests/test_settings.py`
-  - [ ] `LOG_LEVEL` inválido → `ValidationError`
-  - [ ] `POLLING_INTERVAL_SECONDS=0` → `ValidationError`
-  - [ ] `DJANGO_API_BASE_URL` com barra final → armazenado sem barra
-- [ ] `worker/tests/test_payloads.py` *(implementar após 10.C.15 e 10.C.16)*
-  - [ ] `build_initial_list` → payload com exatamente 3 rows (CONFIRMAR, REMARCAR, JA_ENTREGUE)
-  - [ ] `build_initial_list` → nenhum campo contém URL
-  - [ ] `build_horarios_list` com 12 slots → payload com exatamente 10 rows
-  - [ ] `build_horarios_list` → `rowId` começa com `SLOT:`
-  - [ ] `build_horarios_list` → `title` em pt-BR (ex.: `"Seg 12/05 às 09h-11h"`)
-- [ ] `worker/tests/test_redis_queue.py` *(implementar após 10.C.13, usa fakeredis)*
-  - [ ] `is_duplicate_event` retorna `False` na 1ª chamada e `True` na 2ª com mesmo ID
-  - [ ] `mark_sent` / `was_sent` seguem mesmo padrão
-  - [ ] `incr_error` retorna 1, 2, 3 em chamadas consecutivas
-  - [ ] `reset_error` zera o contador
-- [ ] `worker/tests/test_on_response.py` *(implementar após 10.C.19, usa mocks)*
-  - [ ] `rowId=CONFIRMAR` → chama `post_webhook` com `tipo="CONFIRMAR"`
-  - [ ] `rowId=REMARCAR` → chama `enviar_slots.handle`
-  - [ ] `rowId=JA_ENTREGUE` → chama `post_webhook` com `tipo="JA_ENTREGUE"`
-  - [ ] `rowId=SLOT:2026-05-12T09:00:00-03:00` → chama `post_webhook` com `slot_escolhido` correto
-  - [ ] Texto livre 2x → reenvia lista inicial; na 3ª → `post_webhook` com `tipo="FALHA"`
-  - [ ] Evento duplicado (mesmo `event_id`) → não chama `post_webhook` segunda vez
+- [x] `worker/tests/test_logs.py`
+  - [x] `telefone` curto (≤ 4 dígitos) não é mascarado
+  - [x] `telefone` longo → `"****XXXX"`
+  - [x] `Authorization` top-level → `"***"`
+  - [x] `Authorization` em dict `headers` → `"***"`
+  - [x] `correlation_id` injetado após `new_correlation_id()`
+  - [x] `bind_correlation_id` substitui o valor anterior
+- [x] `worker/tests/test_settings.py`
+  - [x] `LOG_LEVEL` inválido → `ValidationError`
+  - [x] `POLLING_INTERVAL_SECONDS=0` → `ValidationError`
+  - [x] `DJANGO_API_BASE_URL` com barra final → armazenado sem barra
+- [x] `worker/tests/test_payloads.py` *(implementar após 10.C.15 e 10.C.16)*
+  - [x] `build_initial_list` → payload com exatamente 3 rows (CONFIRMAR, REMARCAR, JA_ENTREGUE)
+  - [x] `build_initial_list` → nenhum campo contém URL
+  - [x] `build_horarios_list` com 12 slots → payload com exatamente 10 rows
+  - [x] `build_horarios_list` → `rowId` começa com `SLOT:`
+  - [x] `build_horarios_list` → `title` em pt-BR (ex.: `"Seg 12/05 às 09h-11h"`)
+- [x] `worker/tests/test_redis_queue.py` *(implementar após 10.C.13, usa fakeredis)*
+  - [x] `is_duplicate_event` retorna `False` na 1ª chamada e `True` na 2ª com mesmo ID
+  - [x] `mark_sent` / `was_sent` seguem mesmo padrão
+  - [x] `incr_error` retorna 1, 2, 3 em chamadas consecutivas
+  - [x] `reset_error` zera o contador
+- [x] `worker/tests/test_on_response.py` *(implementar após 10.C.19, usa mocks)*
+  - [x] `rowId=CONFIRMAR` → chama `post_webhook` com `tipo="CONFIRMAR"`
+  - [x] `rowId=REMARCAR` → chama `enviar_slots.handle`
+  - [x] `rowId=JA_ENTREGUE` → chama `post_webhook` com `tipo="JA_ENTREGUE"`
+  - [x] `rowId=SLOT:2026-05-12T09:00:00-03:00` → chama `post_webhook` com `slot_escolhido` correto
+  - [x] Texto livre 2x → reenvia lista inicial; na 3ª → `post_webhook` com `tipo="FALHA"`
+  - [x] Evento duplicado (mesmo `event_id`) → não chama `post_webhook` segunda vez
 
 ### 10.C.29 — Simulação visível end-to-end
 - [ ] Executar `make demo` com stack rodando e WhatsApp pareado
