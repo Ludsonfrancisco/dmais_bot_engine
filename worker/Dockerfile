@@ -29,13 +29,14 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-# Copiar código do worker
-COPY . .
+# Copiar código do worker como pacote Python (worker.main:app)
+COPY . ./worker/
 
 # Criar usuário não-root para segurança
 RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid appuser --shell /bin/bash appuser && \
     chown -R appuser:appuser /app
+
 
 USER appuser
 

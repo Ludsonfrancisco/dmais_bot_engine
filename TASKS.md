@@ -329,10 +329,10 @@ cp .env.example .env
 ```
 
 Preencha **obrigatoriamente** no `.env`:
-- [ ] `DJANGO_API_BASE_URL` — URL da API Django (ex.: `https://api.dmais.com.br`)
-- [ ] `DJANGO_API_TOKEN` — token de auth do Django
-- [ ] `EVOLUTION_API_KEY` — string segura (ex.: `minha-chave-123`)
-- [ ] `EVOLUTION_INSTANCE_NAME` — deixe `dmais` ou escolha outro nome
+- [x] `DJANGO_API_BASE_URL` — URL da API Django (ex.: `https://api.dmais.com.br`)
+- [x] `DJANGO_API_TOKEN` — token de auth do Django
+- [x] `EVOLUTION_API_KEY` — string segura (ex.: `minha-chave-123`)
+- [x] `EVOLUTION_INSTANCE_NAME` — deixe `dmais` ou escolha outro nome
 
 > `REDIS_URL`, `EVOLUTION_API_URL`, `POLLING_INTERVAL_SECONDS` etc. ficam com os defaults.
 
@@ -349,9 +349,9 @@ Aguarde ~30s e verifique:
 make ps
 ```
 
-- [ ] `evolution-api` → `healthy`
-- [ ] `redis` → `healthy`
-- [ ] `worker` → `healthy`
+- [x] `evolution-api` → `healthy`
+- [x] `redis` → `healthy`
+- [x] `worker` → `healthy`
 
 > Se algum ficar `starting` por mais de 60s, cole o output de `make logs`.
 
@@ -416,4 +416,4 @@ Toque em **Confirmar coleta** na mensagem recebida no celular.
 make health
 ```
 
-- [ ] Resposta: `{"status": "ok", "redis": "ok", "evolution": "ok"}`
+- [x] Resposta: `{"status": "ok", "redis": "ok", "evolution": "ok"}`

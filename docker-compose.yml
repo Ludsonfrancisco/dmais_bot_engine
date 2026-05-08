@@ -8,6 +8,28 @@
 services:
 
   # ---------------------------------------------------------------------------
+  # PostgreSQL — Banco de dados da EvolutionAPI v2
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: dmais_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=evolution
+      - POSTGRES_PASSWORD=evolution
+      - POSTGRES_DB=evolution
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - dmais_net
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "evolution", "-d", "evolution"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
   # EvolutionAPI — Gateway WhatsApp (Baileys)
   # ---------------------------------------------------------------------------
   evolution-api:
@@ -19,10 +41,10 @@ services:
     environment:
       # Autenticação
       - AUTHENTICATION_API_KEY=${EVOLUTION_API_KEY}
-      # Armazenamento
-      - DATABASE_ENABLED=false
-      - DATABASE_SAVE_DATA_INSTANCE=true
-      - DATABASE_SAVE_DATA_NEW_MESSAGE=true
+      # Armazenamento (PostgreSQL obrigatório na v2)
+      - DATABASE_ENABLED=true
+      - DATABASE_PROVIDER=postgresql
+      - DATABASE_CONNECTION_URI=postgresql://evolution:evolution@postgres:5432/evolution?schema=public
       # Instância padrão
       - DEL_INSTANCE=false
       # Logs
@@ -33,6 +55,9 @@ services:
       - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=true
       - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
       - WEBHOOK_EVENTS_CONNECTION_UPDATE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
       - evolution-instances:/evolution/instances
       - evolution-store:/evolution/store
@@ -106,6 +131,10 @@ volumes:
   # Dados do Redis (AOF para persistência)
   redis-data:
     name: dmais_redis_data
+
+  # Banco de dados da EvolutionAPI v2
+  postgres-data:
+    name: dmais_postgres_data
 
 # =============================================================================
 # Rede interna
