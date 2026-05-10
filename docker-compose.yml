@@ -33,7 +33,7 @@ services:
   # EvolutionAPI — Gateway WhatsApp (Baileys)
   # ---------------------------------------------------------------------------
   evolution-api:
-    image: atendai/evolution-api:latest
+    image: evoapicloud/evolution-api:v2.3.5
     container_name: dmais_evolution
     restart: unless-stopped
     ports:
@@ -52,9 +52,18 @@ services:
       # Webhook global (aponta para o worker)
       - WEBHOOK_GLOBAL_URL=http://worker:${WORKER_HTTP_PORT:-8000}/webhook/evolution
       - WEBHOOK_GLOBAL_ENABLED=true
-      - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=true
+      - WEBHOOK_GLOBAL_WEBHOOK_BY_EVENTS=false
       - WEBHOOK_EVENTS_MESSAGES_UPSERT=true
       - WEBHOOK_EVENTS_CONNECTION_UPDATE=true
+      # Workaround upstream issue #2437 (Pre-key upload timeout + stream 515)
+      # — desabilita sync de histórico que sobrecarrega o Baileys no pareamento
+      - CACHE_REDIS_ENABLED=false
+      - CACHE_LOCAL_ENABLED=true
+      - DATABASE_SAVE_DATA_CHATS=false
+      - DATABASE_SAVE_DATA_CONTACTS=false
+      - DATABASE_SAVE_DATA_HISTORIC=false
+      - DATABASE_SAVE_DATA_LABELS=false
+      - CONFIG_SESSION_PHONE_VERSION=2.3000.1033773198
     depends_on:
       postgres:
         condition: service_healthy

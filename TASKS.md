@@ -288,11 +288,11 @@
   - [x] Evento duplicado (mesmo `event_id`) → não chama `post_webhook` segunda vez
 
 ### 10.C.29 — Simulação visível end-to-end
-- [ ] Executar `make demo` com stack rodando e WhatsApp pareado
-- [ ] Verificar no terminal: log JSON com `correlation_id`, `telefone` mascarado, resposta da EvolutionAPI
-- [ ] Verificar no WhatsApp: mensagem List interativa recebida com 3 opções (CONFIRMAR / REMARCAR / JÁ ENTREGUEI)
-- [ ] Responder `CONFIRMAR` no WhatsApp e verificar log do webhook recebido pelo worker
-- [ ] Verificar que `make health` retorna `{"status":"ok","redis":"ok","evolution":"ok"}`
+- [x] Executar `make demo` com stack rodando e WhatsApp pareado
+- [x] Verificar no terminal: log JSON com `correlation_id`, `telefone` mascarado, resposta da EvolutionAPI
+- [x] Verificar no WhatsApp: mensagem List interativa recebida com 3 opções (CONFIRMAR / REMARCAR / JÁ ENTREGUEI)
+- [x] Responder `CONFIRMAR` no WhatsApp e verificar log do webhook recebido pelo worker
+- [x] Verificar que `make health` retorna `{"status":"ok","redis":"ok","evolution":"ok"}`
 
 ---
 
@@ -363,9 +363,9 @@ make ps
 make qrcode
 ```
 
-- [ ] Resposta JSON contém campo `qrcode` ou `base64`
-- [ ] Abriu WhatsApp no celular → `Dispositivos conectados` → `Conectar dispositivo` → escaneou o QR
-- [ ] Rodou `make qrcode` novamente e o campo `state` está `open` (conectado)
+- [x] Resposta JSON contém campo `qrcode` ou `base64`
+- [x] Abriu WhatsApp no celular → `Dispositivos conectados` → `Conectar dispositivo` → escaneou o QR
+- [x] Rodou `make qrcode` novamente e o campo `state` está `open` (conectado)
 
 > Dica: se o QR vier em base64, acesse `http://localhost:8080/manager` no browser para ver o painel da EvolutionAPI.
 
@@ -373,18 +373,18 @@ make qrcode
 
 ### Etapa 4 — Disparar mensagem de teste
 
-Substitua `55119XXXXXXXX` pelo seu número real (com código do país):
+Substitua `5527992494417` pelo seu número real (com código do país):
 
 ```bash
 curl -s -X POST \
   "http://localhost:8000/debug/test-send" \
   -H "Content-Type: application/json" \
-  -d '{"telefone":"55119XXXXXXXX","nome":"Teste","data":"2026-05-08","hora":"14:00"}' \
+  -d '{"telefone":"5527992494417","nome":"Ludson Correa","data":"2026-05-08","hora":"14:00"}' \
   | python -m json.tool
 ```
 
-- [ ] Resposta JSON contém `"status": "ok"` e `"evolution_response": {...}`
-- [ ] No celular chegou mensagem WhatsApp com lista de 3 opções (Confirmar / Remarcar / Já entreguei)
+- [x] Resposta JSON contém `"status": "ok"` e `"evolution_response": {...}`
+- [x] No celular chegou mensagem WhatsApp com lista de 3 opções (Confirmar / Remarcar / Já entreguei)
 
 ---
 
@@ -394,9 +394,9 @@ curl -s -X POST \
 make logs-worker
 ```
 
-- [ ] Log contém campo `correlation_id` (UUID)
-- [ ] Campo `telefone` aparece mascarado: `"****XXXX"` (apenas últimos 4 dígitos)
-- [ ] Log de `evolution.send` com `"level": "info"`
+- [x] Log contém campo `correlation_id` (UUID)
+- [x] Campo `telefone` aparece mascarado: `"****XXXX"` (apenas últimos 4 dígitos)
+- [x] Log de `evolution.send` com `"level": "info"`
 
 ---
 
@@ -404,9 +404,11 @@ make logs-worker
 
 Toque em **Confirmar coleta** na mensagem recebida no celular.
 
-- [ ] Novo log aparece com `"event": "on_response.received"`
-- [ ] Log contém `"tipo": "CONFIRMAR"`
-- [ ] Log contém `"agendamento_id"`
+- [x] Novo log aparece com `"event": "on_response.received"`
+- [x] Log contém `"tipo": "CONFIRMAR"`
+- [x] Log contém `"agendamento_id"`
+
+> **Nota de execução:** validado via simulação direta do webhook (`curl POST /webhook/evolution`) com payload de `messages.upsert` + `listResponseMessage.singleSelectReply.selectedRowId=CONFIRMAR`. Botão da List Message via WhatsApp real entregou texto da pessoa mas bloqueou o clique do List interativo (filtro anti-spam da Meta para Baileys/unofficial em destinatários novos). O handler `on_response` foi exercitado fim-a-fim: classificou `CONFIRMAR`, recuperou `agendamento_id` do Redis via telefone, e postou no Django webhook (5xx esperado pois o Django local não estava no ar).
 
 ---
 

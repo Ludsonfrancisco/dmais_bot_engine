@@ -109,7 +109,7 @@ class EvolutionClient:
     async def send_list_message(self, payload: dict) -> dict:
         await self.acquire()
         url = f"{settings.EVOLUTION_API_URL}/message/sendList/{settings.EVOLUTION_INSTANCE_NAME}"
-        logger.info("evolution.send", number=payload.get("number"))
+        logger.info("evolution.send", telefone=payload.get("number"))
         r = await self._ensure_client().post(url, json=payload)
         r.raise_for_status()
         logger.debug("evolution.send.ok", status=r.status_code)
@@ -119,7 +119,7 @@ class EvolutionClient:
     async def send_text_message(self, telefone: str, text: str) -> dict:
         await self.acquire()
         url = f"{settings.EVOLUTION_API_URL}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
-        logger.info("evolution.send_text", number=telefone)
+        logger.info("evolution.send_text", telefone=telefone)
         r = await self._ensure_client().post(url, json={"number": telefone, "text": text})
         r.raise_for_status()
         logger.debug("evolution.send_text.ok", status=r.status_code)

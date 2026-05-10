@@ -5,6 +5,10 @@
 # Uso: make <comando>
 # =============================================================================
 
+# Carrega .env automaticamente para que EVOLUTION_API_KEY etc. estejam disponíveis
+-include .env
+export
+
 .PHONY: up down logs restart build test-send qrcode health shell-worker shell-redis ps test demo
 
 # ---------------------------------------------------------------------------
@@ -71,10 +75,27 @@ shell-redis:
 # QRCode — Obter QR de pareamento da instância EvolutionAPI
 # ---------------------------------------------------------------------------
 qrcode:
-	@echo "Buscando QRCode da instância '$${EVOLUTION_INSTANCE_NAME:-dmais}'..."
+	@echo "Buscando QRCode da instância '$(EVOLUTION_INSTANCE_NAME)'..."
 	@curl -s -X GET \
-		"http://localhost:8080/instance/connect/$${EVOLUTION_INSTANCE_NAME:-dmais}" \
-		-H "apikey: $${EVOLUTION_API_KEY}" | python -m json.tool
+		"http://localhost:8080/instance/connect/$(EVOLUTION_INSTANCE_NAME)" \
+		-H "apikey: $(EVOLUTION_API_KEY)" | python3 -c "\
+import sys, json, base64, os; \
+d = json.load(sys.stdin); \
+state = d.get('instance',{}).get('state') or ('open' if d.get('me') else None); \
+qr = d.get('qrcode') or d; \
+base64_data = qr.get('base64',''); \
+code = qr.get('code',''); \
+count = qr.get('count',0); \
+print('---'); \
+print('Estado:', state or 'connecting'); \
+print('QR count:', count); \
+print('QR disponível:', 'SIM' if code else 'NÃO'); \
+(\
+  open('/tmp/dmais_qr.png','wb').write(base64.b64decode(base64_data.split(',')[1])) \
+  and print('QR salvo em: /tmp/dmais_qr.png (abra para escanear)') \
+) if base64_data else None; \
+print('---'); \
+"
 
 # ---------------------------------------------------------------------------
 # Envio de teste — Dispara um agendamento fake para validar setup

@@ -146,14 +146,15 @@ class _TestSendBody(BaseModel):
 
 @app.post("/debug/test-send")
 async def debug_test_send(body: _TestSendBody):
+    # agendamento_id sintético único por chamada (evita bloqueio do `was_sent` no Redis)
+    import time as _time
     agendamento = {
-        "agendamento_id": 0,
+        "agendamento_id": int(_time.time() * 1000),
         "nome": body.nome,
         "telefone": body.telefone,
         "data": body.data,
         "hora": body.hora,
         "status": "PENDENTE_CONFIRMACAO",
     }
-    payload = build_initial_list(agendamento)
-    evolution_response = await evolution_client.send_list_message(payload)
+    evolution_response = await enviar_inicial.handle(agendamento)
     return {"status": "ok", "evolution_response": evolution_response}

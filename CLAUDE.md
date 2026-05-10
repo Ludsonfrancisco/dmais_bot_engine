@@ -6,11 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `dmais_bot_engine` is a WhatsApp message dispatch engine for DMais reverse logistics. It polls a Django API for pending collection schedules and sends interactive WhatsApp List Messages via EvolutionAPI (Baileys). The worker has no database of its own — all durable state lives in the external Django API; Redis is operational-only.
 
-**Status:** Most `worker/` files are stubs with `# TODO: Implementar na task 10.C.x` markers. See `TASKS.md` for the full Sprint C checklist.
+**Status:** Sprint C nearly complete — `worker/` modules and tests are implemented. Outstanding items live in `TASKS.md` (currently Etapa 5/6 of `10.C.29`: end-to-end simulation).
 
 ## Commands
 
-All development is Docker-based. There is no local test runner yet.
+All development is Docker-based.
 
 ```bash
 make up           # docker compose up -d --build (start everything)
@@ -24,7 +24,14 @@ make shell-worker # bash inside worker container
 make shell-redis  # redis-cli inside Redis container
 make qrcode       # fetch WhatsApp pairing QR (Evolution must be up)
 make test-send    # POST a fake schedule to /debug/test-send
-make clean        # DESTRUCTIVE: removes all volumes including WhatsApp session
+make test         # run pytest inside worker container
+make demo         # up + wait healthy + test-send + tail logs
+make clean        # DESTRUCTIVE: removes all volumes including WhatsApp session and Postgres
+```
+
+Tests use `pytest-asyncio` (`asyncio_mode=auto`) and `fakeredis`. Run a single test:
+```bash
+docker compose exec worker python -m pytest tests/test_payloads.py::test_initial_list_three_rows -v
 ```
 
 To run a single Python command inside the worker:
@@ -34,18 +41,19 @@ docker compose exec worker python -c "..."
 
 ## Architecture
 
-Three Docker services in `docker-compose.yml`:
+Four Docker services in `docker-compose.yml`:
 
 | Service | Image | Role |
 |---|---|---|
-| `evolution-api` | `atendai/evolution-api:latest` | WhatsApp gateway (Baileys), port 8080 |
-| `redis` | `redis:7-alpine` | Queues, idempotency, rate limiting |
+| `evolution-api` | `evoapicloud/evolution-api:v2.3.5` (pinned, see below) | WhatsApp gateway (Baileys), port 8080 |
+| `postgres` | `postgres:16-alpine` | Required by Evolution v2 for instance state |
+| `redis` | `redis:7-alpine` | Queues, idempotency, rate limiting (worker-only; Evolution uses local cache) |
 | `worker` | local build `./worker` | FastAPI + async polling loop, port 8000 |
 
 ```
 Django API (external) ←→ worker (FastAPI + poller) ←→ EvolutionAPI ←→ WhatsApp
-                                    ↑↓
-                                  Redis
+                                    ↑↓                       ↓
+                                  Redis                   Postgres
 ```
 
 ### Worker internals (`worker/`)
@@ -69,6 +77,23 @@ Django API (external) ←→ worker (FastAPI + poller) ←→ EvolutionAPI ←�
 - **Rate limit:** Token bucket capped at `MAX_MESSAGES_PER_MINUTE` (default 30). `evolution_client.acquire()` must be called before every send.
 - **Error tolerance:** The polling loop must never die — all exceptions must be caught and logged.
 - **Volume `dmais_evolution_instances`:** Stores the paired WhatsApp session. Never delete this volume; losing it requires re-pairing via QR code.
+
+### Evolution version pin (do not bump casually)
+
+The `evolution-api` image is pinned to **`v2.3.5`** (not `latest`). Two upstream bugs make newer versions unusable for this project:
+
+- **v2.3.6 / v2.3.7 break `sendList`** with `TypeError: this.isZero is not a function` — see [issue #2390](https://github.com/EvolutionAPI/evolution-api/issues/2390). Our entire flow depends on List Messages, so any version after v2.3.5 will fail interactive sends.
+- **`Pre-key upload timeout` + `stream:error 515`** during pairing/initial sync — see [issue #2437](https://github.com/EvolutionAPI/evolution-api/issues/2437). Mitigated by these env vars on the `evolution-api` service (already set in `docker-compose.yml`):
+  ```
+  CACHE_REDIS_ENABLED=false
+  CACHE_LOCAL_ENABLED=true
+  DATABASE_SAVE_DATA_CHATS=false
+  DATABASE_SAVE_DATA_CONTACTS=false
+  DATABASE_SAVE_DATA_HISTORIC=false
+  DATABASE_SAVE_DATA_LABELS=false
+  CONFIG_SESSION_PHONE_VERSION=2.3000.1033773198
+  ```
+  Removing these reintroduces the pre-key timeout that silently blocks all outbound sends. Side effect: `Message` rows in Postgres stay `PENDING` even after delivery (delivery acks aren't persisted) — verify delivery via the WhatsApp app, not the DB.
 
 ## Environment Variables
 
