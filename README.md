@@ -263,6 +263,26 @@ docker run --rm -v dmais_evolution_instances:/data -v $(pwd):/backup \
 
 ---
 
+## ⚠️ Retomar o projeto em outra máquina
+
+Antes de subir a stack em nova máquina ou após reboot, leia o **checklist completo em [CLAUDE.md](./CLAUDE.md#retomar-o-projeto-em-outra-máquina--após-reboot)**. Resumo:
+
+1. **`git pull`** dos dois repos (`dmais_bot_engine` + `dmais_portal` irmão).
+2. **`dmais_portal` é controlado exclusivamente pelo usuário** — nunca rodar `git commit`/`push` ali sem autorização. Itens pendentes lá podem precisar ser pulled antes de subir.
+3. **`.env`** não é versionado (gitignored). Recriar a partir de `.env.example` com:
+   - `DJANGO_API_TOKEN` (gere com `python manage.py criar_token_motor --label <nome>` no portal)
+   - `EVOLUTION_API_KEY` (qualquer string aleatória 32+ chars — vira a senha mestra)
+4. **Sessão WhatsApp** vive em volume Docker local. Em máquina nova: re-parear via QR.
+5. **Estados de conversa em Redis** são voláteis — em retomada limpa, clientes precisam responder do menu inicial novamente.
+
+### O que NUNCA fazer
+
+- ❌ `docker compose down -v` ou `make clean` — apaga sessão WhatsApp.
+- ❌ `git commit`/`push` no `dmais_portal/` — repo exclusivo do usuário.
+- ❌ Subir sem conferir `MAX_MESSAGES_PER_MINUTE=4` (anti-bloqueio).
+
+---
+
 ## Referências
 
 - [CLAUDE.md](./CLAUDE.md) — Guia técnico atual (arquitetura, internals, decisões).

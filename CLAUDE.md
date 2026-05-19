@@ -203,6 +203,67 @@ Copy `.env.example` to `.env` before starting. Key variables:
 - `LOG_LEVEL` — default: `INFO`
 - `WORKER_HTTP_PORT` — default: `8000`
 
+## ⚠️ Retomar o projeto em outra máquina / após reboot
+
+Antes de subir a stack, leia o checklist abaixo. Há **5 pontos** que não vivem no Git e podem causar bloqueios silenciosos.
+
+### Checklist de retomada
+
+| # | Item | Verificar / Ação |
+|---|---|---|
+| 1 | **Pull do repo `dmais_bot_engine`** | `git pull origin main` — código e docs estão versionados |
+| 2 | **Pull do repo `dmais_portal`** (irmão, `../dmais_portal`) | `git pull` — **o usuário é quem commita ali; nunca commite no portal sem permissão dele**. Verificar com ele se há mudanças não-pushadas: `core/settings.py`, `logistica_reversa/api/views.py`, `logistica_reversa/api/serializers.py`, `logistica_reversa/static/logistica_reversa/js/kanban.js` |
+| 3 | **`.env` do bot_engine** | Gitignored. Copiar de outro lugar ou regenerar: `cp .env.example .env` e preencher `DJANGO_API_TOKEN`, `EVOLUTION_API_KEY`. O token do Django se gera com `python manage.py criar_token_motor --label <nome>` no dmais_portal. |
+| 4 | **Sessão WhatsApp pareada** | Vive no volume Docker `dmais_evolution_instances` (local). Em nova máquina é necessário re-parear: `curl -X POST http://localhost:8080/instance/create ...` + escanear QR. **Backup recomendado** se for migração planejada (ver "Backup de volumes" no README). |
+| 5 | **Redis state** | Volátil. Estados intermediários de conversas (período/data em andamento) se perdem — clientes precisam responder novamente do menu inicial. Os agendamentos pendentes continuam em `PENDENTE_CONTATO` no Django, e o polling reenviará. |
+
+### Erros típicos e diagnóstico rápido
+
+| Sintoma | Causa provável | Como verificar |
+|---|---|---|
+| Webhook do bot retorna 501 | `dmais_portal` sem a `WhatsAppWebhookView` implementada (versão antiga do código) | `curl -X POST -H 'Authorization: Token <token>' http://localhost:8001/api/logistica-reversa/whatsapp-webhook/ -d '{}'` deve retornar 400, não 501 |
+| Cards do kanban abrem em branco | `lr_dashboard_token` vazio + `SessionAuthentication` ausente em DRF | `<meta name="lr-dashboard-token">` no HTML do kanban deve ter content; e `core/settings.py` deve ter `SessionAuthentication` nos `DEFAULT_AUTHENTICATION_CLASSES` |
+| Worker dá 400 em `sendText` | Número não existe no WhatsApp (problema do "nono dígito" BR) | Pré-flight `check_exists` já cuida; veja log `enviar_inicial.number_not_on_whatsapp` |
+| Worker em loop "agendamento_id: null" | Cliente fora da lista mandando mensagem direto pro bot | Comportamento esperado: 3 inválidas → para. Para silenciar, filtre por `agendamento != None` antes de classificar |
+| Django retorna 400 "Disallowed Host" para `host.docker.internal` | `ALLOWED_HOSTS` faltando entrada | `dmais_portal/core/settings.py`: `ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'host.docker.internal']` |
+| Bot manda mensagem com data passada (ex: "06/01" em maio) | Adapter `_adapt()` não bumpando para amanhã | Verificar `worker/main.py::_adapt()` tem a checagem `< date.today()` → `today + timedelta(days=1)` |
+| Cliente recebe 2 mensagens em rajada após texto livre | Versão antiga do `_handle_invalid` (fallback + reenvio separados) | Deve estar unificado: 1 mensagem só com prefix `"Desculpe, não entendi sua resposta. 🙏\n\n"` + menu inicial |
+
+### Ordem para subir tudo do zero
+
+```bash
+# 1. Worker stack (Docker)
+cd dmais_bot_engine
+cp .env.example .env   # editar com credenciais
+docker compose up -d --build
+docker inspect -f '{{.State.Health.Status}}' dmais_worker   # esperar "healthy"
+
+# 2. Pareamento WhatsApp (se primeira vez ou sessão perdida)
+curl -X POST http://localhost:8080/instance/create -H "apikey: $EVOLUTION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"instanceName":"dmais","qrcode":true,"integration":"WHATSAPP-BAILEYS"}'
+# Salvar o base64 como PNG e escanear
+
+# 3. Django (host, fora do Docker)
+cd ..\dmais_portal
+$env:LR_DASHBOARD_TOKEN = "<mesmo token DRF do worker>"
+.\venv\Scripts\python.exe manage.py runserver 0.0.0.0:8001 --noreload
+
+# 4. Sanity check
+curl http://localhost:8000/health                # worker
+curl -H "Authorization: Token <t>" http://localhost:8001/api/logistica-reversa/pendentes-recolha/  # Django
+```
+
+### O que NUNCA fazer ao retomar
+
+- ❌ `docker compose down -v` ou `make clean` — apaga sessão WhatsApp e Postgres do Evolution. Re-pareamento manual obrigatório.
+- ❌ `git commit`/`push` no `dmais_portal/` — esse repo é controlado exclusivamente pelo usuário.
+- ❌ Deletar o volume `dmais_evolution_instances`.
+- ❌ Rodar `redis-cli FLUSHDB` no Redis enquanto há conversas em andamento — perde os estados intermediários.
+- ❌ Subir o motor sem conferir `MAX_MESSAGES_PER_MINUTE=4` no `.env` (anti-bloqueio WhatsApp). Valor default antigo (30) pode causar shadowban.
+
+---
+
 ## Demo dataset (hardcoded for sprint)
 
 `worker/payloads/list_initial.py` has two hardcoded constants for the current sprint, to be replaced by real Django integration later:
