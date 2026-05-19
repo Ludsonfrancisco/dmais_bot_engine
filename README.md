@@ -8,12 +8,15 @@
 
 O `dmais_bot_engine` é um **motor autocontido**, orquestrado via Docker Compose, responsável por:
 
-1. **Buscar agendamentos pendentes** na API Django (polling periódico).
-2. **Enviar mensagens WhatsApp** (List Messages interativas) via EvolutionAPI (Baileys).
-3. **Receber respostas** dos clientes (webhooks do Evolution) e rotear de volta ao Django.
-4. **Gerenciar filas e idempotência** com Redis.
+1. **Buscar agendamentos pendentes** na API Django (polling periódico, 60s).
+2. **Enviar mensagens WhatsApp** (texto plano com opções numeradas, branding AT3 Internet) via EvolutionAPI (Baileys).
+3. **Conduzir um diálogo multi-etapas** (confirmar → escolher período / remarcar → data + período / já entreguei → texto livre) — máquina de estados em Redis.
+4. **Rotear respostas dos clientes** de volta ao Django via webhook (move kanban: PENDENTE_CONTATO → AGUARDANDO_CLIENTE → CONFIRMADO/REMARCADO/JA_ENTREGUE).
+5. **Gerenciar filas e idempotência** com Redis (rate-limit 4 msg/min com jitter aleatório, idempotência por event_id, lock por chat).
 
-O motor **não possui banco de dados próprio** — todo estado durável vive na API Django. O Redis serve apenas como memória operacional (filas, controle de duplicidade, rate limiting).
+O motor **não possui banco de dados próprio** — todo estado durável vive na API Django. O Redis serve como memória operacional (filas, duplicidade, rate limiting, **estado da conversa por telefone**).
+
+> ⚠️ **Mudança arquitetural (May 2026):** O PRD original especificava WhatsApp List Messages, mas a Meta as deprecou no protocolo Web/Multi-Device. O motor agora usa **texto plano com opções numeradas (1/2/3)** e máquina de estados multi-etapas. Detalhes técnicos completos em [CLAUDE.md](./CLAUDE.md).
 
 ### Arquitetura
 
@@ -76,7 +79,7 @@ Edite o `.env` e preencha os valores reais:
 | `EVOLUTION_INSTANCE_NAME`   | Nome da instância/sessão WhatsApp             | `dmais`                     |
 | `REDIS_URL`                 | URL de conexão Redis                          | `redis://redis:6379/0`      |
 | `POLLING_INTERVAL_SECONDS`  | Intervalo de polling (segundos)               | `60`                        |
-| `MAX_MESSAGES_PER_MINUTE`   | Limite de envios por minuto                   | `30`                        |
+| `MAX_MESSAGES_PER_MINUTE`   | Limite de envios por minuto (anti-bloqueio)   | `4`                         |
 | `LOG_LEVEL`                 | Nível de log (`DEBUG`/`INFO`/`WARNING`/`ERROR`)| `INFO`                     |
 | `WORKER_HTTP_PORT`          | Porta HTTP do worker (FastAPI)                | `8000`                      |
 
@@ -192,13 +195,13 @@ dmais_bot_engine/
     ├── main.py               # FastAPI + polling loop
     ├── payloads/
     │   ├── __init__.py
-    │   ├── list_initial.py   # Payload da lista inicial (3 opções)
-    │   └── list_horarios.py  # Payload da lista de horários (até 10 slots)
+    │   ├── list_initial.py   # Textos AT3: inicial (3 opções), período (manhã/tarde), datas remarcar
+    │   └── list_horarios.py  # Legado: lista de slots (preservado para compat)
     └── handlers/
         ├── __init__.py
-        ├── enviar_inicial.py # Handler: envio da mensagem inicial
-        ├── enviar_slots.py   # Handler: envio de horários (REMARCAR)
-        ├── on_response.py    # Handler: webhook do Evolution
+        ├── enviar_inicial.py # Pre-check (check_exists), envia inicial, transiciona Django
+        ├── enviar_slots.py   # Legado: envio de horários
+        ├── on_response.py    # State machine multi-etapas + lock por chat + @lid
         └── on_timeout.py     # Handler: timeout de agendamento
 ```
 
@@ -262,7 +265,9 @@ docker run --rm -v dmais_evolution_instances:/data -v $(pwd):/backup \
 
 ## Referências
 
-- [PRD.md](./PRD.md) — Documento de requisitos completo.
+- [CLAUDE.md](./CLAUDE.md) — Guia técnico atual (arquitetura, internals, decisões).
+- [FLOW.md](./FLOW.md) — Diagrama da máquina de estados conversacional + mensagens.
+- [PRD.md](./PRD.md) — Documento de requisitos original (parte foi superada — ver CLAUDE.md).
 - [TASKS.md](./TASKS.md) — Guia de execução Sprint C.
 - [EvolutionAPI Docs](https://doc.evolution-api.com/) — Documentação oficial.
 - [FastAPI Docs](https://fastapi.tiangolo.com/) — Framework do worker.

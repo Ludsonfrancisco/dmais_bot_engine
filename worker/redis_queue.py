@@ -104,6 +104,20 @@ class RedisQueue:
         await pipe.execute()
 
     # ------------------------------------------------------------------
+    # Estado da conversa por telefone  (substitui rowId das listMessages)
+    # chave: state:<telefone>  — valores: "AGUARDANDO_INICIAL" | "AGUARDANDO_SLOT:<json>"
+    # ------------------------------------------------------------------
+
+    async def set_state(self, telefone: str, state: str) -> None:
+        await self._ensure_client().set(f"state:{telefone}", state, ex=_TTL)
+
+    async def get_state(self, telefone: str) -> str | None:
+        return await self._ensure_client().get(f"state:{telefone}")
+
+    async def clear_state(self, telefone: str) -> None:
+        await self._ensure_client().delete(f"state:{telefone}")
+
+    # ------------------------------------------------------------------
     # Fila de retry  (futuro — PRD §7)
     # chave: retry:<queue>
     # ------------------------------------------------------------------

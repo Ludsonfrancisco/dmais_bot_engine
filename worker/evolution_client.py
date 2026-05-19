@@ -125,5 +125,17 @@ class EvolutionClient:
         logger.debug("evolution.send_text.ok", status=r.status_code)
         return r.json()
 
+    async def check_exists(self, telefone: str) -> bool:
+        """Verifica se o número existe no WhatsApp. Evita 400 + queima de token bucket."""
+        url = f"{settings.EVOLUTION_API_URL}/chat/whatsappNumbers/{settings.EVOLUTION_INSTANCE_NAME}"
+        try:
+            r = await self._ensure_client().post(url, json={"numbers": [telefone]})
+            r.raise_for_status()
+            data = r.json()
+            return bool(data and data[0].get("exists"))
+        except Exception as exc:
+            logger.warning("evolution.check_exists_failed", telefone=telefone, error=str(exc))
+            return True  # em caso de falha, tenta enviar (fail-open)
+
 
 evolution_client = EvolutionClient()

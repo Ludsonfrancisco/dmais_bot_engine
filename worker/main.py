@@ -1,6 +1,7 @@
 import asyncio
 import random
 from contextlib import asynccontextmanager
+from datetime import date, timedelta
 
 import httpx
 from fastapi import FastAPI, Request
@@ -10,12 +11,41 @@ from worker.api_client import django_client
 from worker.evolution_client import evolution_client
 from worker.handlers import enviar_inicial, on_response, on_timeout
 from worker.logs import configure_logging, get_logger, new_correlation_id
-from worker.payloads.list_initial import build_initial_list
 from worker.redis_queue import redis_queue
 from worker.settings import settings
 
 configure_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Adapter Django → shape esperado pelo worker
+# ---------------------------------------------------------------------------
+
+def _adapt(raw: dict) -> dict:
+    """Converte agendamento do Django (cliente_*, data_agendada, id-UUID) para o shape
+    que enviar_inicial / on_response esperam.
+
+    Se data_agendada estiver no passado (planilha desatualizada), usa amanhã
+    no lugar para evitar mensagem com data já vencida.
+    """
+    data_agendada = raw.get("data_agendada", "")
+    data_str = data_agendada[:10] if data_agendada else ""
+
+    try:
+        if data_str and date.fromisoformat(data_str) < date.today():
+            data_str = (date.today() + timedelta(days=1)).isoformat()
+    except ValueError:
+        pass
+
+    return {
+        "agendamento_id": raw.get("id"),                  # UUID string
+        "nome":           raw.get("cliente_nome", ""),
+        "telefone":       raw.get("cliente_telefone", "").lstrip("+"),
+        "data":           data_str,
+        "hora":           raw.get("janela_horario", "MANHA"),
+        "status":         raw.get("status"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -35,21 +65,30 @@ async def _poll_loop() -> None:
                     logger.error("poller.fetch_error", page=page, error=str(exc))
                     break
 
-                for agendamento in data.get("results", []):
-                    status = agendamento.get("status")
+                for raw in data.get("results", []):
+                    status = raw.get("status")
+                    dispatched = False
                     try:
-                        if status == "PENDENTE_CONFIRMACAO":
-                            await enviar_inicial.handle(agendamento)
+                        if status == "PENDENTE_CONTATO":
+                            result = await enviar_inicial.handle(_adapt(raw))
+                            # Só aplica jitter se houve envio real (não em skip por was_sent)
+                            dispatched = result != "SKIP"
                         elif status == "TIMEOUT":
-                            await on_timeout.handle(agendamento["agendamento_id"])
+                            await on_timeout.handle(raw.get("id"))
                         # demais status ignorados silenciosamente
                     except Exception as exc:
                         logger.error(
                             "poller.handler_error",
                             status=status,
-                            agendamento_id=agendamento.get("agendamento_id"),
+                            agendamento_id=raw.get("id"),
                             error=str(exc),
                         )
+                        dispatched = True  # respeita jitter mesmo em falha (anti-burst)
+
+                    if dispatched:
+                        # Jitter aleatório (anti-bloqueio WhatsApp): com MAX_MESSAGES_PER_MINUTE=4,
+                        # média ~15s, range 8-22s para evitar padrão fixo
+                        await asyncio.sleep(random.uniform(8, 22))
 
                 if not data.get("next"):
                     break

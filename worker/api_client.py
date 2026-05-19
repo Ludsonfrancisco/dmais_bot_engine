@@ -88,5 +88,31 @@ class DjangoAPIClient:
         r.raise_for_status()
         logger.debug("django.webhook.ok", url=url, status=r.status_code)
 
+    @_retry
+    async def update_status(
+        self,
+        agendamento_id: str,
+        novo_status: str,
+        motivo: str = "",
+        inc_tentativas: bool = False,
+    ) -> None:
+        """PATCH no endpoint de status para transicionar o agendamento no kanban.
+
+        Se `inc_tentativas` for True, também incrementa o contador tentativas_envio.
+        """
+        url = f"{settings.DJANGO_API_BASE_URL}/api/logistica-reversa/agendamentos/{agendamento_id}/status/"
+        logger.info(
+            "django.status_patch",
+            agendamento_id=agendamento_id,
+            status=novo_status,
+            inc_tentativas=inc_tentativas,
+        )
+        r = await self._ensure_client().patch(
+            url,
+            json={"status": novo_status, "motivo": motivo, "inc_tentativas": inc_tentativas},
+        )
+        r.raise_for_status()
+        logger.debug("django.status_patch.ok", status=r.status_code)
+
 
 django_client = DjangoAPIClient()
