@@ -10,7 +10,7 @@ async def test_handle_enviar_slots_success():
         {"inicio": "2026-05-12T09:00:00-03:00", "fim": "2026-05-12T11:00:00-03:00"}
     ]
     
-    with patch("worker.handlers.enviar_slots.api_client.listar_slots", new_callable=AsyncMock) as mock_listar, \
+    with patch("worker.handlers.enviar_slots.django_client.listar_slots", new_callable=AsyncMock) as mock_listar, \
          patch("worker.handlers.enviar_slots.evolution_client.send_text_message", new_callable=AsyncMock) as mock_send_text, \
          patch("worker.handlers.enviar_slots.redis_queue.set_state", new_callable=AsyncMock) as mock_set_state:
         
@@ -30,9 +30,9 @@ async def test_handle_enviar_slots_no_slots():
     agendamento_id = 123
     telefone = "5511999998888"
     
-    with patch("worker.handlers.enviar_slots.api_client.listar_slots", new_callable=AsyncMock) as mock_listar, \
+    with patch("worker.handlers.enviar_slots.django_client.listar_slots", new_callable=AsyncMock) as mock_listar, \
          patch("worker.handlers.enviar_slots.evolution_client.send_text_message", new_callable=AsyncMock) as mock_send_text, \
-         patch("worker.handlers.enviar_slots.api_client.post_webhook", new_callable=AsyncMock) as mock_webhook, \
+         patch("worker.handlers.enviar_slots.django_client.post_webhook", new_callable=AsyncMock) as mock_webhook, \
          patch("worker.handlers.enviar_slots.redis_queue.clear_state", new_callable=AsyncMock):
         
         mock_listar.return_value = []
@@ -41,7 +41,7 @@ async def test_handle_enviar_slots_no_slots():
         
         mock_listar.assert_called_once_with(agendamento_id)
         mock_send_text.assert_called_once()
-        assert "não encontrei horários" in mock_send_text.call_args[0][1]
+        assert "Não há horários disponíveis" in mock_send_text.call_args[0][1]
         
         mock_webhook.assert_called_once()
         webhook_payload = mock_webhook.call_args[0][0]
@@ -53,6 +53,7 @@ async def test_handle_enviar_slots_error_django():
     agendamento_id = 123
     telefone = "5511999998888"
     
-    with patch("worker.handlers.enviar_slots.api_client.listar_slots", side_effect=Exception("Django Error")):
-        # Should not raise exception (it's caught in the handler)
-        await handle(agendamento_id, telefone)
+    with patch("worker.handlers.enviar_slots.django_client.listar_slots", side_effect=Exception("Django Error")):
+        # Current handler lets Django/API errors propagate to the caller.
+        with pytest.raises(Exception, match="Django Error"):
+            await handle(agendamento_id, telefone)
