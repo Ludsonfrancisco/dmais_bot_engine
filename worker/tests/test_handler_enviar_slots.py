@@ -11,17 +11,19 @@ async def test_handle_enviar_slots_success():
     ]
     
     with patch("worker.handlers.enviar_slots.api_client.listar_slots", new_callable=AsyncMock) as mock_listar, \
-         patch("worker.handlers.enviar_slots.evolution_client.send_list_message", new_callable=AsyncMock) as mock_send_list:
+         patch("worker.handlers.enviar_slots.evolution_client.send_text_message", new_callable=AsyncMock) as mock_send_text, \
+         patch("worker.handlers.enviar_slots.redis_queue.set_state", new_callable=AsyncMock) as mock_set_state:
         
         mock_listar.return_value = mock_slots
         
         await handle(agendamento_id, telefone)
         
         mock_listar.assert_called_once_with(agendamento_id)
-        mock_send_list.assert_called_once()
-        # Verify payload contains the number
-        args, _ = mock_send_list.call_args
-        assert args[0]["number"] == telefone
+        mock_send_text.assert_called_once()
+        # Verify text message contains numbered options
+        args, _ = mock_send_text.call_args
+        assert args[0] == telefone  # phone number
+        assert "1" in args[1]  # contains numbered option
 
 @pytest.mark.asyncio
 async def test_handle_enviar_slots_no_slots():
@@ -30,7 +32,8 @@ async def test_handle_enviar_slots_no_slots():
     
     with patch("worker.handlers.enviar_slots.api_client.listar_slots", new_callable=AsyncMock) as mock_listar, \
          patch("worker.handlers.enviar_slots.evolution_client.send_text_message", new_callable=AsyncMock) as mock_send_text, \
-         patch("worker.handlers.enviar_slots.api_client.post_webhook", new_callable=AsyncMock) as mock_webhook:
+         patch("worker.handlers.enviar_slots.api_client.post_webhook", new_callable=AsyncMock) as mock_webhook, \
+         patch("worker.handlers.enviar_slots.redis_queue.clear_state", new_callable=AsyncMock):
         
         mock_listar.return_value = []
         
