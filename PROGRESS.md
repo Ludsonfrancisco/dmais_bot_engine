@@ -21,37 +21,51 @@
 ### 1. ⚠️ Rate limit não permite mais de 4 msg/min + sleep randômico
 - **Criticidade**: CRÍTICO
 - **Branch**: `fix/criterio-rate-limit-test`
-- **Status**: Difft pronto, aguardando aprovação
+- **Status**: CONCLUÍDO em branch local — commit `8166db6`
+- **Executor responsável**: Subagente + Hermes Agent
+- **Validação**: `.venv/bin/python -m pytest worker/tests/test_rate_limit_jitter.py -q` → 10 passed
 - **Detalhes**:
   - Código JA implementa token bucket (Redis Lua) com `MAX_MESSAGES_PER_MINUTE=4`
   - Jitter JA implementado: `random.uniform(8, 22)` entre mensagens
   - Polling jitter JA implementado: ±20% em `POLLING_INTERVAL_SECONDS`
-  - **Falta**: Teste automatizado `worker/tests/test_rate_limit_jitter.py` (diff proposto com 8 testes)
-- **Diff proposto** (gerado por subagente):
-  - Novo arquivo: `worker/tests/test_rate_limit_jitter.py` (303 linhas, 8 testes)
-  - Testes: (a) token bucket respeita 4 msg/min, (b) jitter é random.uniform não fixo, (c) polling ±20% com floor de 1.0s
+  - Teste automatizado `worker/tests/test_rate_limit_jitter.py` adicionado
 
 ### 2. ⏳ Polling consome /pendentes-recolha/ paginado
 - **Criticidade**: ALTO
 - **Branch**: `fix/criterio-polling-paginado`
-- **Status**: Subagente interrompido — precisará reexecutar
+- **Status**: CONCLUÍDO em branch local — commit `b3a4747`
+- **Executor responsável**: Hermes Agent, com revisão delegada
+- **Validação**: `.venv/bin/python -m pytest worker/tests/test_polling_pagination.py -q` → 3 passed
 - **Detalhes**:
   - Código em `worker/main.py` `_poll_loop()` itera páginas via campo `next`
   - `_adapt()` converte agendamento Django → shape do worker
   - Status `PENDENTE_CONTATO` dispara `enviar_inicial.handle()`
   - Status `TIMEOUT` dispara `on_timeout.handle()`
-  - **Falta**: Validar com teste automatizado
+  - Teste automatizado `worker/tests/test_polling_pagination.py` adicionado
 
 ### 3. ⏱️ Docker compose up saudável com healthchecks
 - **Criticidade**: MÉDIO
 - **Branch**: `fix/criterio-docker-health`
-- **Status**: NÃO iniciado
-- **Detalhes**: docker-compose.yml tem 4 serviços (postgres, evolution-api, redis, worker) com healthchecks definidos
+- **Status**: CONCLUÍDO em branch local — commit `781a4b1`
+- **Executor responsável**: Hermes Agent, com revisão delegada; Gemini CLI indisponível por falta de autenticação local
+- **Validação**: `cp .env.example .env && docker compose config --quiet && git diff --check` → passou
+- **Limitação**: `docker compose up -d --build` não pôde ser executado neste ambiente por falta de permissão no socket Docker (`/var/run/docker.sock`)
+- **Detalhes**:
+  - Corrigido `DATABASE_CONNECTION_URI` da EvolutionAPI para usar a senha real do Postgres local
+  - Adicionado `POSTGRES_PASSWORD` no `.env.example`
+  - Corrigido placeholder inseguro/ambíguo de `EVOLUTION_API_KEY`
+  - Healthcheck da EvolutionAPI trocado para comando via Node, evitando depender de `wget` na imagem
 
 ### 4. 📖 README permite setup em < 10 min
 - **Criticidade**: BAIXO
 - **Branch**: `fix/criterio-readme-setup`
-- **Status**: NÃO iniciado
+- **Status**: CONCLUÍDO em branch local — commit `114878c`
+- **Executor responsável**: Hermes Agent, com revisão delegada; Gemini CLI indisponível por falta de autenticação local
+- **Validação**: `cp .env.example .env && docker compose config --quiet && git diff --check` → passou; busca por placeholders antigos (`SUA_API_KEY`, URLs hardcoded dmais, `3 serviços`, `decodifique`) → sem ocorrências
+- **Detalhes**:
+  - Setup rápido agora inclui `make up`, `make ps`, `make health`, criação/pareamento da instância e validação do `state=open`
+  - Comandos usam variáveis do `.env` em vez de placeholders manuais
+  - README corrigido para 4 serviços: postgres, evolution-api, redis, worker
 
 ---
 
@@ -75,4 +89,4 @@
 ## Notas
 
 - Commit `aa6e8fc` resolveu 5 problemas críticos/altos (PRD, TASKS, DATAS_REMARCAR_DEMO, testes, .env.example, CI/CD)
-- Branch `main` está 1 commit à frente de `origin/main` (pendente de `git push`)
+- Branch `main` está à frente de `origin/main` e os critérios pendentes foram finalizados em branches locais separadas. O usuário prefere executar `git push` pessoalmente.
