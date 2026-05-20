@@ -2,6 +2,7 @@
 
 > Última atualização: 2026-05-20
 > Commit base: `aa6e8fc`
+> Integração final local: `main` contém os 4 critérios via merges `90b7558`, `d99b93d`, `b1f5e11`, `855ab22`
 
 ---
 
@@ -89,4 +90,6 @@
 ## Notas
 
 - Commit `aa6e8fc` resolveu 5 problemas críticos/altos (PRD, TASKS, DATAS_REMARCAR_DEMO, testes, .env.example, CI/CD)
-- Branch `main` está à frente de `origin/main` e os critérios pendentes foram finalizados em branches locais separadas. O usuário prefere executar `git push` pessoalmente.
+- Branch `main` está à frente de `origin/main` e já integra os 4 critérios pendentes. O usuário prefere executar `git push` pessoalmente.
+- Validação final integrada: `.venv/bin/python -m pytest worker/tests -q` → 68 passed; `cp .env.example .env && docker compose config --quiet` → passou.
+- Validação runtime pendente apenas por permissão local no Docker socket (`/var/run/docker.sock`); executar `docker compose up -d --build && docker compose ps` em ambiente com permissão Docker.
