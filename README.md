@@ -77,27 +77,43 @@ Edite o `.env` e preencha os valores reais:
 | `EVOLUTION_API_URL`         | URL interna da EvolutionAPI                   | `http://evolution-api:8080` |
 | `EVOLUTION_API_KEY`         | API key global da EvolutionAPI                | —                           |
 | `EVOLUTION_INSTANCE_NAME`   | Nome da instância/sessão WhatsApp             | `dmais`                     |
+| `POSTGRES_PASSWORD`         | Senha do Postgres interno da EvolutionAPI     | `evolution`                 |
 | `REDIS_URL`                 | URL de conexão Redis                          | `redis://redis:6379/0`      |
 | `POLLING_INTERVAL_SECONDS`  | Intervalo de polling (segundos)               | `60`                        |
 | `MAX_MESSAGES_PER_MINUTE`   | Limite de envios por minuto (anti-bloqueio)   | `4`                         |
 | `LOG_LEVEL`                 | Nível de log (`DEBUG`/`INFO`/`WARNING`/`ERROR`)| `INFO`                     |
 | `WORKER_HTTP_PORT`          | Porta HTTP do worker (FastAPI)                | `8000`                      |
 
-### 3. Subir os serviços
+### 3. Subir e validar a stack
 
 ```bash
 make up
-# ou: docker compose up -d --build
+make ps
+make health
 ```
 
-### 4. Verificar saúde dos containers
+Todos os serviços (`postgres`, `evolution-api`, `redis`, `worker`) devem estar com status `healthy` em até 60 segundos.
+
+### 4. Criar/parear a instância WhatsApp
 
 ```bash
-make ps
-# ou: docker compose ps
+set -a; . ./.env; set +a
+curl -s -X POST "http://localhost:8080/instance/create" \
+  -H "apikey: $EVOLUTION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"instanceName":"'"$EVOLUTION_INSTANCE_NAME"'","qrcode":true}' | python -m json.tool
+make qrcode
+xdg-open /tmp/dmais_qr.png  # opcional: abre a imagem gerada pelo make qrcode
 ```
 
-Todos os serviços devem estar com status `healthy` em até 60 segundos.
+Escaneie o QR no WhatsApp: Dispositivos conectados → Conectar dispositivo. Depois confirme:
+
+```bash
+curl -s -X GET "http://localhost:8080/instance/connectionState/$EVOLUTION_INSTANCE_NAME" \
+  -H "apikey: $EVOLUTION_API_KEY" | python -m json.tool
+```
+
+O campo `state` deve ser `"open"`.
 
 ---
 
@@ -114,14 +130,12 @@ O pareamento conecta a EvolutionAPI a um número de WhatsApp real via QRCode.
 
 2. **Crie a instância** (apenas na primeira vez):
    ```bash
+   set -a; . ./.env; set +a
    curl -s -X POST \
      "http://localhost:8080/instance/create" \
-     -H "apikey: SUA_API_KEY" \
+     -H "apikey: $EVOLUTION_API_KEY" \
      -H "Content-Type: application/json" \
-     -d '{
-       "instanceName": "dmais",
-       "qrcode": true
-     }' | python -m json.tool
+     -d '{"instanceName":"'"$EVOLUTION_INSTANCE_NAME"'","qrcode":true}' | python -m json.tool
    ```
 
 3. **Obtenha o QRCode** para escanear:
@@ -129,11 +143,10 @@ O pareamento conecta a EvolutionAPI a um número de WhatsApp real via QRCode.
    make qrcode
    # ou:
    curl -s -X GET \
-     "http://localhost:8080/instance/connect/dmais" \
-     -H "apikey: SUA_API_KEY" | python -m json.tool
+     "http://localhost:8080/instance/connect/$EVOLUTION_INSTANCE_NAME" \
+     -H "apikey: $EVOLUTION_API_KEY" | python -m json.tool
    ```
-   - A resposta terá um campo `base64` com a imagem do QR.
-   - Copie o valor base64 e decodifique (ou use o painel web da Evolution se habilitado).
+   - O `make qrcode` salva a imagem em `/tmp/dmais_qr.png`; abra esse arquivo para escanear.
 
 4. **Escaneie o QRCode** com o WhatsApp do número que será usado para enviar as mensagens:
    - Abra o WhatsApp → Dispositivos conectados → Conectar dispositivo → Escaneie o QR.
@@ -141,8 +154,8 @@ O pareamento conecta a EvolutionAPI a um número de WhatsApp real via QRCode.
 5. **Verifique a conexão**:
    ```bash
    curl -s -X GET \
-     "http://localhost:8080/instance/connectionState/dmais" \
-     -H "apikey: SUA_API_KEY" | python -m json.tool
+     "http://localhost:8080/instance/connectionState/$EVOLUTION_INSTANCE_NAME" \
+     -H "apikey: $EVOLUTION_API_KEY" | python -m json.tool
    ```
    - O campo `state` deve ser `"open"`.
 
@@ -176,7 +189,7 @@ O pareamento conecta a EvolutionAPI a um número de WhatsApp real via QRCode.
 dmais_bot_engine/
 ├── .env.example              # Template de variáveis de ambiente
 ├── .gitignore                # Python + Docker + sensíveis
-├── docker-compose.yml        # 3 serviços: evolution-api, redis, worker
+├── docker-compose.yml        # 4 serviços: postgres, evolution-api, redis, worker
 ├── Makefile                  # Atalhos operacionais
 ├── PRD.md                    # Product Requirements Document
 ├── TASKS.md                  # Guia de execução Sprint C (checkboxes)
