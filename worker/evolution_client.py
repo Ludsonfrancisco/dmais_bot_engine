@@ -10,11 +10,18 @@ from tenacity import (
     wait_exponential,
 )
 
+from worker.circuit_breaker import circuit_breaker
 from worker.logs import get_logger
 from worker.redis_queue import redis_queue
 from worker.settings import settings
 
 logger = get_logger(__name__)
+
+
+class CircuitOpenError(Exception):
+    """Raised when the circuit breaker is OPEN and the call is blocked."""
+
+    pass
 
 _BUCKET_KEY = "ratelimit:bucket"
 _LAST_REFILL_KEY = "ratelimit:last_refill"
@@ -30,15 +37,23 @@ local elapsed = math.max(0, now - last_refill)
 tokens = math.min(capacity, tokens + elapsed * refill_rate)
 if tokens >= 1 then
     tokens = tokens - 1
-    redis.call('SET', KEYS[1], tokens)
-    redis.call('SET', KEYS[2], now)
+    redis.call('SET', KEYS[1], tokens, 'EX', 86400)
+    redis.call('SET', KEYS[2], now, 'EX', 86400)
     return 1
 end
 return tostring((1 - tokens) / refill_rate)
 """
 
 
+# Exceptions that must never be retried — fail fast instead of burning attempts.
+# CircuitOpenError means the breaker is OPEN: retrying would just hammer a known
+# dead endpoint, so it is skipped immediately.
+_NON_RETRYABLE: tuple[type[BaseException], ...] = (CircuitOpenError,)
+
+
 def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, _NON_RETRYABLE):
+        return False
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code >= 500
     return isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.ReadError, httpx.RemoteProtocolError))
@@ -105,8 +120,20 @@ class EvolutionClient:
             logger.debug("ratelimit.wait", wait_seconds=round(wait, 3))
             await asyncio.sleep(wait)
 
-    @_retry
     async def send_list_message(self, payload: dict) -> dict:
+        """Send a list message via Evolution API with circuit-breaker protection."""
+        if not await circuit_breaker.before_call("sendList"):
+            raise CircuitOpenError("circuit breaker is OPEN, skipping send_list")
+        try:
+            result = await self._send_list_message(payload)
+            circuit_breaker.record_success("sendList")
+            return result
+        except Exception:
+            await circuit_breaker.record_failure("sendList")
+            raise
+
+    @_retry
+    async def _send_list_message(self, payload: dict) -> dict:
         await self.acquire()
         url = f"{settings.EVOLUTION_API_URL}/message/sendList/{settings.EVOLUTION_INSTANCE_NAME}"
         logger.info("evolution.send", telefone=payload.get("number"))
@@ -115,8 +142,20 @@ class EvolutionClient:
         logger.debug("evolution.send.ok", status=r.status_code)
         return r.json()
 
-    @_retry
     async def send_text_message(self, telefone: str, text: str) -> dict:
+        """Send a text message via Evolution API with circuit-breaker protection."""
+        if not await circuit_breaker.before_call("sendText"):
+            raise CircuitOpenError("circuit breaker is OPEN, skipping send_text")
+        try:
+            result = await self._send_text_message(telefone, text)
+            circuit_breaker.record_success("sendText")
+            return result
+        except Exception:
+            await circuit_breaker.record_failure("sendText")
+            raise
+
+    @_retry
+    async def _send_text_message(self, telefone: str, text: str) -> dict:
         await self.acquire()
         url = f"{settings.EVOLUTION_API_URL}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
         logger.info("evolution.send_text", telefone=telefone)

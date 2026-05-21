@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     POLLING_INTERVAL_SECONDS: int = 60
     MAX_MESSAGES_PER_MINUTE: int = 4
 
+    # Conversation timeout (seconds of inactivity before auto-FALHA)
+    CONVERSATION_TIMEOUT_SECONDS: int = 14400  # 4 hours
+
     # Observabilidade
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 

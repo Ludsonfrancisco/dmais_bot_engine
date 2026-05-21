@@ -8,14 +8,20 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from worker.api_client import django_client
-from worker.evolution_client import evolution_client
-from worker.handlers import enviar_inicial, on_response, on_timeout
+from worker.circuit_breaker import circuit_breaker
+from worker.evolution_client import CircuitOpenError, evolution_client
+from worker.handlers import enviar_inicial, on_conversation_timeout, on_response, on_timeout
+from worker.handlers.on_response import cleanup_chat_locks
 from worker.logs import configure_logging, get_logger, new_correlation_id
 from worker.redis_queue import redis_queue
 from worker.settings import settings
 
 configure_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
+
+# When the circuit is OPEN, poll again sooner than the full interval so the
+# breaker can transition to HALF_OPEN and recover quickly once Evolution is back.
+_CIRCUIT_OPEN_RETRY_SECONDS = 30
 
 
 # ---------------------------------------------------------------------------
@@ -54,9 +60,47 @@ def _adapt(raw: dict) -> dict:
 
 async def _poll_loop() -> None:
     """Ciclo permanente: nunca deve morrer — todas as exceções são capturadas."""
+    cleanup_counter = 0
     while True:
         new_correlation_id()
         try:
+            # Timeout scan: check for conversations that expired due to inactivity
+            try:
+                timed_out = await redis_queue.scan_timeouts()
+                for telefone in timed_out:
+                    try:
+                        await on_conversation_timeout.handle(telefone)
+                    except Exception as exc:
+                        logger.error(
+                            "poller.timeout_handler_error",
+                            telefone=telefone,
+                            error=str(exc),
+                        )
+            except Exception as exc:
+                logger.error("poller.timeout_scan_error", error=str(exc))
+
+            # Periodic chat-lock cleanup: every 10 cycles, remove idle locks
+            cleanup_counter += 1
+            if cleanup_counter >= 10:
+                try:
+                    cleanup_chat_locks()
+                except Exception as exc:
+                    logger.error("poller.lock_cleanup_error", error=str(exc))
+                cleanup_counter = 0
+
+            # Circuit breaker check: skip entire poll cycle if Evolution API is down.
+            # The poller dispatches via send_text_message, so it watches the
+            # 'sendText' endpoint specifically.
+            # Retry sooner than the full interval so recovery (HALF_OPEN) happens fast.
+            if await circuit_breaker.is_open("sendText"):
+                logger.warning(
+                    "poller.skip",
+                    reason="circuit open, retrying soon",
+                    retry_in=_CIRCUIT_OPEN_RETRY_SECONDS,
+                )
+                await asyncio.sleep(_CIRCUIT_OPEN_RETRY_SECONDS)
+                continue
+
             page = 1
             while True:
                 try:
@@ -76,6 +120,13 @@ async def _poll_loop() -> None:
                         elif status == "TIMEOUT":
                             await on_timeout.handle(raw.get("id"))
                         # demais status ignorados silenciosamente
+                    except CircuitOpenError:
+                        logger.warning(
+                            "poller.circuit_open",
+                            status=status,
+                            agendamento_id=raw.get("id"),
+                        )
+                        dispatched = False  # don't jitter, skip to next item
                     except Exception as exc:
                         logger.error(
                             "poller.handler_error",

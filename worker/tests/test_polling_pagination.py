@@ -13,7 +13,7 @@ def _raw_agendamento(
     status: str,
     *,
     nome: str = "Fulano",
-    telefone: str = "+5511999998888",
+    telefone: str = "+551999998888",
     data_agendada: str = "2099-05-19T08:00:00-03:00",
     janela_horario: str = "MANHA",
 ) -> dict:
@@ -65,6 +65,10 @@ async def test_poll_loop_consumes_all_paginated_pendentes_and_routes_statuses():
 
     enviar_inicial = AsyncMock(return_value="SKIP")
     on_timeout = AsyncMock()
+    mock_rq = MagicMock()
+    mock_rq.scan_timeouts = AsyncMock(return_value=[])
+    mock_cb = MagicMock()
+    mock_cb.is_open = AsyncMock(return_value=False)
 
     # Encerra o while True depois que o ciclo completo termina e o poller
     # chega ao sleep entre ciclos. Como enviar_inicial retorna "SKIP", não há
@@ -75,6 +79,8 @@ async def test_poll_loop_consumes_all_paginated_pendentes_and_routes_statuses():
         patch.object(main, "django_client", django_client),
         patch.object(main.enviar_inicial, "handle", enviar_inicial),
         patch.object(main.on_timeout, "handle", on_timeout),
+        patch.object(main.redis_queue, "scan_timeouts", mock_rq.scan_timeouts),
+        patch.object(main.circuit_breaker, "is_open", mock_cb.is_open),
         patch.object(main.asyncio, "sleep", sleep),
     ):
         with pytest.raises(asyncio.CancelledError):
@@ -115,9 +121,15 @@ async def test_poll_loop_stops_pagination_when_next_is_missing():
         }
     )
     sleep = AsyncMock(side_effect=asyncio.CancelledError)
+    mock_rq = MagicMock()
+    mock_rq.scan_timeouts = AsyncMock(return_value=[])
+    mock_cb = MagicMock()
+    mock_cb.is_open = AsyncMock(return_value=False)
 
     with (
         patch.object(main, "django_client", django_client),
+        patch.object(main.redis_queue, "scan_timeouts", mock_rq.scan_timeouts),
+        patch.object(main.circuit_breaker, "is_open", mock_cb.is_open),
         patch.object(main.asyncio, "sleep", sleep),
     ):
         with pytest.raises(asyncio.CancelledError):

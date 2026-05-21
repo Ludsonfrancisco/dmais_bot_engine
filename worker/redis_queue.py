@@ -1,4 +1,5 @@
 import json as _json
+import time as _time
 
 import redis.asyncio as aioredis
 
@@ -6,6 +7,8 @@ from worker.logs import get_logger
 from worker.settings import settings
 
 logger = get_logger(__name__)
+
+_TIMEOUT_WATCH = "timeout_watch"  # sorted set: member=telefone, score=deadline_ts
 
 _TTL = 86400  # 24 horas — TTL padrão para todas as chaves operacionais
 
@@ -116,6 +119,41 @@ class RedisQueue:
 
     async def clear_state(self, telefone: str) -> None:
         await self._ensure_client().delete(f"state:{telefone}")
+
+    # ------------------------------------------------------------------
+    # Timeout tracking  (conversation inactivity detection)
+    # sorted set: timeout_watch  — member=telefone, score=deadline_ts
+    # string:     activity:<telefone>  — last activity epoch timestamp
+    # ------------------------------------------------------------------
+
+    async def track_activity(self, telefone: str) -> None:
+        """Atualiza timestamp de atividade e recalcula deadline no sorted set.
+
+        Score = now + CONVERSATION_TIMEOUT_SECONDS.
+        """
+        now = _time.time()
+        deadline = now + settings.CONVERSATION_TIMEOUT_SECONDS
+        client = self._ensure_client()
+        pipe = client.pipeline()
+        pipe.set(f"activity:{telefone}", str(now), ex=_TTL)
+        pipe.zadd(_TIMEOUT_WATCH, {telefone: deadline})
+        await pipe.execute()
+
+    async def clear_activity(self, telefone: str) -> None:
+        """Remove rastreamento de atividade e entry do sorted set."""
+        client = self._ensure_client()
+        pipe = client.pipeline()
+        pipe.delete(f"activity:{telefone}")
+        pipe.zrem(_TIMEOUT_WATCH, telefone)
+        await pipe.execute()
+
+    async def scan_timeouts(self) -> list[str]:
+        """Retorna telefones cujo deadline já passou (score <= now)."""
+        now = _time.time()
+        members = await self._ensure_client().zrangebyscore(
+            _TIMEOUT_WATCH, "-inf", now
+        )
+        return members  # list[str]
 
     # ------------------------------------------------------------------
     # Fila de retry  (futuro — PRD §7)

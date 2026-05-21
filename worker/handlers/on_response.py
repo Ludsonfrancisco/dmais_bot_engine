@@ -30,8 +30,17 @@ STATE_AGUARDANDO_TEXTO_ENTREGUE   = "AGUARDANDO_TEXTO_ENTREGUE"     # sem ctx
 
 # Numérico → ID lógico inicial (CONFIRMAR/REMARCAR/JA_ENTREGUE)
 _NUM_TO_INITIAL = {str(i): _id for i, (_id, _) in enumerate(OPCOES_INICIAIS, start=1)}
+# Written-out numbers (Portuguese) → same mapping
+_NUM_EXTENSO_TO_INITIAL = {
+    "um": "CONFIRMAR", "dois": "REMARCAR", "tres": "JA_ENTREGUE",
+    "três": "JA_ENTREGUE",
+}
 # Numérico → ID período (MANHA/TARDE)
 _NUM_TO_PERIODO = {str(i): _id for i, (_id, _) in enumerate(PERIODOS, start=1)}
+# Written-out numbers (Portuguese) → same mapping
+_NUM_EXTENSO_TO_PERIODO = {
+    "um": "MANHA", "dois": "TARDE",
+}
 
 _KEYWORD_TO_INITIAL = {
     "confirmar": "CONFIRMAR", "confirmo": "CONFIRMAR", "sim": "CONFIRMAR",
@@ -67,6 +76,8 @@ _PERIODO_LABEL = {"MANHA": "manhã", "TARDE": "tarde"}
 # Locks por chat para serializar mensagens em rajada do mesmo cliente.
 # Single-process asyncio: get/set síncronos não correm, então não precisa meta-lock.
 _chat_locks: dict[str, asyncio.Lock] = {}
+_CHAT_LOCK_TTL = 3600  # seconds before an idle lock is considered stale
+
 
 def _get_chat_lock(chat_id: str) -> asyncio.Lock:
     lock = _chat_locks.get(chat_id)
@@ -74,6 +85,23 @@ def _get_chat_lock(chat_id: str) -> asyncio.Lock:
         lock = asyncio.Lock()
         _chat_locks[chat_id] = lock
     return lock
+
+
+def cleanup_chat_locks() -> int:
+    """Remove stale locks that are not currently held.
+
+    Returns the number of locks removed. Safe to call periodically from the
+    poller to prevent unbounded dict growth from one-off chats.
+    """
+    stale = [
+        cid for cid, lock in _chat_locks.items()
+        if not lock.locked()
+    ]
+    for cid in stale:
+        _chat_locks.pop(cid, None)
+    if stale:
+        logger.info("on_response.lock_cleanup", removed=len(stale), remaining=len(_chat_locks))
+    return len(stale)
 
 
 # ---------------------------------------------------------------------------
@@ -119,12 +147,16 @@ def _classify_initial(text: str) -> str | None:
     norm = _normalize(text)
     if norm in _NUM_TO_INITIAL:
         return _NUM_TO_INITIAL[norm]
+    if norm in _NUM_EXTENSO_TO_INITIAL:
+        return _NUM_EXTENSO_TO_INITIAL[norm]
     return _KEYWORD_TO_INITIAL.get(norm)
 
 def _classify_periodo(text: str) -> str | None:
     norm = _normalize(text)
     if norm in _NUM_TO_PERIODO:
         return _NUM_TO_PERIODO[norm]
+    if norm in _NUM_EXTENSO_TO_PERIODO:
+        return _NUM_EXTENSO_TO_PERIODO[norm]
     return _KEYWORD_TO_PERIODO.get(norm)
 
 def _format_data_humana(data_str: str) -> str:
@@ -232,6 +264,7 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
     # ──────────────────────────────────────────────────────────────
     if state == STATE_AGUARDANDO_TEXTO_ENTREGUE:
         await redis_queue.clear_state(tel)
+        await redis_queue.clear_activity(tel)
         await redis_queue.reset_error(chat_id)
         await evolution_client.send_text_message(tel, _REPLY_JA_ENTREGUE)
         await _post_webhook_safe(
@@ -250,6 +283,7 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
         if periodo and data_iso:
             slot = slot_iso_de(data_iso, periodo)
             await redis_queue.clear_state(tel)
+            await redis_queue.clear_activity(tel)
             await redis_queue.reset_error(chat_id)
             await evolution_client.send_text_message(
                 tel,
@@ -277,6 +311,7 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
             await redis_queue.set_state(
                 tel, f"{STATE_AGUARDANDO_PERIODO_REMARCAR}{_json.dumps({'data': data_iso})}"
             )
+            await redis_queue.track_activity(tel)
             await evolution_client.send_text_message(tel, build_periodo_text(data_iso))
             logger.info("on_response.data_remarcar_escolhida", data=data_iso, agendamento_id=agendamento_id)
             return
@@ -293,6 +328,7 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
         if periodo and data_iso:
             slot = slot_iso_de(data_iso, periodo)
             await redis_queue.clear_state(tel)
+            await redis_queue.clear_activity(tel)
             await redis_queue.reset_error(chat_id)
             await evolution_client.send_text_message(
                 tel,
@@ -324,6 +360,7 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
         await redis_queue.set_state(
             tel, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': data_iso})}"
         )
+        await redis_queue.track_activity(tel)
         await evolution_client.send_text_message(tel, build_periodo_text(data_iso))
         logger.info("on_response.confirmar_pediu_periodo", agendamento_id=agendamento_id)
 
@@ -332,11 +369,13 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
         await redis_queue.set_state(
             tel, f"{STATE_AGUARDANDO_DATA_REMARCAR}{_json.dumps(mapping)}"
         )
+        await redis_queue.track_activity(tel)
         await evolution_client.send_text_message(tel, texto_datas)
         logger.info("on_response.remarcar_pediu_data", agendamento_id=agendamento_id)
 
     elif tipo == "JA_ENTREGUE":
         await redis_queue.set_state(tel, STATE_AGUARDANDO_TEXTO_ENTREGUE)
+        await redis_queue.track_activity(tel)
         await evolution_client.send_text_message(tel, MSG_JA_ENTREGUE_PERGUNTA)
         logger.info("on_response.ja_entregue_pediu_texto", agendamento_id=agendamento_id)
 
@@ -355,6 +394,7 @@ async def _handle_invalid(event_id, chat_id, tel, agendamento, agendamento_id, e
     if errors >= _MAX_ERRORS:
         await redis_queue.reset_error(chat_id)
         await redis_queue.clear_state(tel)
+        await redis_queue.clear_activity(tel)
         await _post_webhook_safe(
             _webhook(None, agendamento_id, tel, "FALHA", None, None, cid)
         )

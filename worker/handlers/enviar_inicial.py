@@ -45,10 +45,10 @@ async def handle(agendamento: dict) -> dict | None:
         return None
 
     telefone, texto = build_initial_text(agendamento)
-    response = await evolution_client.send_text_message(telefone, texto)
-    await redis_queue.mark_sent(agendamento_id)
     await redis_queue.store_agendamento(telefone, agendamento)
     await redis_queue.set_state(telefone, STATE_INICIAL)
+    await redis_queue.mark_sent(agendamento_id)
+    response = await evolution_client.send_text_message(telefone, texto)
 
     # Transição no kanban: PENDENTE_CONTATO → AGUARDANDO_CLIENTE + incrementa tentativas
     try:

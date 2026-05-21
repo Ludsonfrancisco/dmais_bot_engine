@@ -141,11 +141,15 @@ async def test_dispatched_message_uses_random_jitter_sleep():
 
     with patch("worker.main.django_client") as mock_django, \
          patch("worker.main.enviar_inicial.handle", new_callable=AsyncMock) as mock_handle, \
+         patch("worker.main.redis_queue.scan_timeouts", new_callable=AsyncMock) as mock_scan, \
+         patch("worker.main.circuit_breaker.is_open", new_callable=AsyncMock) as mock_cb, \
          patch("worker.main.random.uniform") as mock_uniform, \
          patch("worker.main.asyncio.sleep", side_effect=fake_sleep):
 
         mock_django.listar_pendentes = fake_listar_pendentes
         mock_handle.return_value = "OK"
+        mock_scan.return_value = []
+        mock_cb.return_value = False
         mock_uniform.side_effect = [15.5, 0.0]
 
         with pytest.raises(_BreakLoop):
