@@ -57,7 +57,7 @@ ps:
 # Health check manual do worker
 # ---------------------------------------------------------------------------
 health:
-	@curl -s http://localhost:$${WORKER_HTTP_PORT:-8000}/health | python -m json.tool
+	@curl -s http://localhost:$${WORKER_HTTP_PORT:-8000}/health | python3 -m json.tool
 
 # ---------------------------------------------------------------------------
 # Abrir shell no container do worker
@@ -106,7 +106,7 @@ test-send:
 		"http://localhost:$${WORKER_HTTP_PORT:-8000}/debug/test-send" \
 		-H "Content-Type: application/json" \
 		-d '{"telefone":"5511999999999","nome":"Teste","data":"2026-01-01","hora":"14:00"}' \
-		| python -m json.tool
+		| python3 -m json.tool
 
 # ---------------------------------------------------------------------------
 # Rodar testes unitários dentro do container worker
