@@ -155,7 +155,7 @@ def _format_city_radar(city_deltas: dict, has_previous: bool) -> str:
 def _radar_group_name(grupo: str, delta: int) -> str:
     """Nome do grupo no radar, sensível ao contexto (positivo/negativo)."""
     if grupo == "ATIVACAO":
-        return "Instalação pendente" if delta < 0 else "Instalação"
+        return "Instalações no backlog" if delta < 0 else "Instalação"
     if grupo == "REPARO":
         return "Reparos" if delta < 0 else "Reparos pendentes"
     return grupo
