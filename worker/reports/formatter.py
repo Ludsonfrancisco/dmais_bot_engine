@@ -44,8 +44,11 @@ def format_cycle_report(
 ) -> str:
     """Relatório bi-horário com variação e radar de cidades."""
 
-    h = int(hour.split(":")[0])
-    window = f"{h:02d}h"
+    try:
+        h = int(hour.split(":")[0])
+        window = f"{h:02d}h"
+    except (ValueError, IndexError):
+        window = hour
 
     group_lines = _format_group_section(group_counts, group_deltas, has_previous)
     radar_lines = _format_city_radar(city_deltas, has_previous)
