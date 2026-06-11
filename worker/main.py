@@ -30,6 +30,7 @@ from worker.reports.data import (
     fetch_group_counts,
     fetch_status_header,
 )
+from worker.scheduler import run_scheduler
 
 configure_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
@@ -179,13 +180,23 @@ async def _poll_loop() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(_poll_loop(), name="poller")
-    logger.info("worker.started", polling_interval=settings.POLLING_INTERVAL_SECONDS)
+    sched_task = asyncio.create_task(run_scheduler(), name="scheduler")
+    logger.info(
+        "worker.started",
+        polling_interval=settings.POLLING_INTERVAL_SECONDS,
+        scheduler_tz=settings.REPORT_TIMEZONE,
+    )
     try:
         yield
     finally:
         task.cancel()
+        sched_task.cancel()
         try:
             await task
+        except asyncio.CancelledError:
+            pass
+        try:
+            await sched_task
         except asyncio.CancelledError:
             pass
         await django_client.aclose()
@@ -459,6 +470,12 @@ async def debug_cycle(body: _DebugCycleBody):
         },
     ]
 
+    # Get destinations once
+    from worker.evolution_client import evolution_client
+    from worker.reports.destinations import get_report_destinations
+
+    destinations = get_report_destinations()
+
     for prt in prints:
         img = await capture_portal_page(
             prt["path"],
@@ -469,14 +486,14 @@ async def debug_cycle(body: _DebugCycleBody):
             col_dim=prt.get("col"),
             light_mode=prt.get("light", False),
         )
-        await send_report_screenshot(img, caption=prt["cap"])
+        for dest in destinations:
+            await evolution_client.send_group_image_message(
+                dest.group_jid, img, caption=prt["cap"]
+            )
 
     # Send text report after prints (without test prefix)
-    from worker.evolution_client import evolution_client
-    from worker.reports.destinations import get_report_destinations
-
     results = []
-    for dest in get_report_destinations():
+    for dest in destinations:
         resp = await evolution_client.send_group_text_message(dest.group_jid, text)
         results.append({"target": dest.name, "response": resp})
 
