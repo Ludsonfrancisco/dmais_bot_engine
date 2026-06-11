@@ -101,7 +101,7 @@ def _format_city_radar(city_deltas: dict, has_previous: bool) -> str:
         return ""
 
     priority_groups = {"REPARO": 2, "ATIVACAO": 2}
-    skip_groups = {"ME", "SERVICOS", "SERVIÇOS"}
+    skip_groups = {"ME", "SERVICOS", "SERVIÇOS", "CANCELAMENTO", "Cancelamento Desc. CAB.", "Moni. CCRI"}
     improvements = []
     ativacao_ritmo = []  # Ativação caindo = executando bem
     warnings_list = []
