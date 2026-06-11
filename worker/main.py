@@ -14,6 +14,7 @@ from worker.handlers import enviar_inicial, on_conversation_timeout, on_response
 from worker.handlers.on_response import cleanup_chat_locks
 from worker.logs import configure_logging, get_logger, new_correlation_id
 from worker.redis_queue import redis_queue
+from worker.reports.sender import send_report_text
 from worker.settings import settings
 
 configure_logging(settings.LOG_LEVEL)
@@ -248,3 +249,17 @@ async def debug_test_send(body: _TestSendBody):
     }
     evolution_response = await enviar_inicial.handle(agendamento)
     return {"status": "ok", "evolution_response": evolution_response}
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-send-text  (Sprint Report Automation)
+# ---------------------------------------------------------------------------
+
+class _ReportDebugTextBody(BaseModel):
+    text: str = "Teste de envio do dmais_bot_engine para o grupo de homologação."
+
+
+@app.post("/reports/debug-send-text")
+async def debug_send_report_text(body: _ReportDebugTextBody):
+    results = await send_report_text(body.text)
+    return {"status": "ok", "sent": results}

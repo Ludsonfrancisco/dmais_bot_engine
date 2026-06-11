@@ -143,11 +143,23 @@ class EvolutionClient:
         return r.json()
 
     async def send_text_message(self, telefone: str, text: str) -> dict:
-        """Send a text message via Evolution API with circuit-breaker protection."""
+        """Send a text message to an individual phone via Evolution API."""
+        return await self._send_text_with_circuit(telefone, text, log_field="telefone")
+
+    async def send_group_text_message(self, group_jid: str, text: str) -> dict:
+        """Send a text message to a WhatsApp group JID.
+
+        Groups use the same EvolutionAPI sendText endpoint, but the `number`
+        payload is a group JID such as `120363000000000000@g.us`. Do not call
+        check_exists() for groups; that endpoint is for individual numbers.
+        """
+        return await self._send_text_with_circuit(group_jid, text, log_field="group_jid")
+
+    async def _send_text_with_circuit(self, number_or_jid: str, text: str, log_field: str) -> dict:
         if not await circuit_breaker.before_call("sendText"):
             raise CircuitOpenError("circuit breaker is OPEN, skipping send_text")
         try:
-            result = await self._send_text_message(telefone, text)
+            result = await self._send_text_message(number_or_jid, text, log_field=log_field)
             circuit_breaker.record_success("sendText")
             return result
         except Exception:
@@ -155,11 +167,11 @@ class EvolutionClient:
             raise
 
     @_retry
-    async def _send_text_message(self, telefone: str, text: str) -> dict:
+    async def _send_text_message(self, number_or_jid: str, text: str, log_field: str = "telefone") -> dict:
         await self.acquire()
         url = f"{settings.EVOLUTION_API_URL}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
-        logger.info("evolution.send_text", telefone=telefone)
-        r = await self._ensure_client().post(url, json={"number": telefone, "text": text})
+        logger.info("evolution.send_text", **{log_field: number_or_jid})
+        r = await self._ensure_client().post(url, json={"number": number_or_jid, "text": text})
         r.raise_for_status()
         logger.debug("evolution.send_text.ok", status=r.status_code)
         return r.json()

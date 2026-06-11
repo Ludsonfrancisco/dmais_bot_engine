@@ -1,7 +1,7 @@
 # PROGRESS — dmais_bot_engine (Critérios "Pronto")
 
-> Última atualização: 2026-06-10
-> Commit mais recente: `6b4ad0d` (docs: atualiza PROGRESS.md com pendencias para terminar mais tarde)
+> Última atualização: 2026-06-11
+> Commit mais recente: `c4453c9` (docs: prepare WhatsApp report automation sprint)
 > Fase atual: Report Automation — enviar relatórios/prints do dmais_portal (Backlog/Prazo) para grupo WhatsApp de testes antes de liberar grupo oficial.
 
 ---
@@ -43,6 +43,32 @@ Nenhum relatório vai direto para o grupo oficial. Todo fluxo começa em `WHATSA
 - **Validação final**:
   - `.venv/bin/python -m ruff check worker/` → All checks passed!
   - `.venv/bin/python -m pytest worker/tests/ -q` → 107 passed
+  - `docker compose --env-file /tmp/dmais_bot_engine.env config --quiet` → passou
+
+### Status Sprint 1
+
+- **Executor responsável**: Hermes Agent
+- **Status**: CONCLUÍDO
+- **Objetivo**: envio seguro de texto para grupo WhatsApp de testes, sem acionar grupo oficial por acidente.
+- **Entregas desta Sprint**:
+  - Adicionados settings de Report Automation em `worker/settings.py`.
+  - Adicionado `send_group_text_message(group_jid, text)` em `worker/evolution_client.py`.
+  - Criado pacote `worker/reports/` com resolução de destinos e envio textual.
+  - Criado endpoint manual `POST /reports/debug-send-text`.
+  - Grupo de teste recebe prefixo automático `[AMBIENTE DE TESTE]`.
+  - JIDs retornados em respostas/logs de relatório são mascarados.
+  - `check_exists()` não é usado para grupos WhatsApp.
+- **Regra de segurança implementada**:
+  - `REPORT_TARGETS=test` envia apenas para `WHATSAPP_TEST_GROUP_JID`.
+  - `REPORT_TARGETS=production` exige `WHATSAPP_REPORT_GROUP_JID` explícito.
+  - Todo destino precisa ser JID de grupo terminado em `@g.us`.
+- **Testes adicionados**:
+  - `worker/tests/test_report_destinations.py`
+  - `worker/tests/test_report_sender.py`
+  - `worker/tests/test_evolution_group_send.py`
+- **Validação final**:
+  - `.venv/bin/python -m ruff check worker/` → All checks passed!
+  - `.venv/bin/python -m pytest worker/tests/ -q` → 116 passed
   - `docker compose --env-file /tmp/dmais_bot_engine.env config --quiet` → passou
 
 ---
