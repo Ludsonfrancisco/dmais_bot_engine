@@ -157,5 +157,5 @@ def _radar_group_name(grupo: str, delta: int) -> str:
     if grupo == "ATIVACAO":
         return "Instalações no backlog" if delta < 0 else "Instalação"
     if grupo == "REPARO":
-        return "Reparos" if delta < 0 else "Reparo (aumentou o Backlog)"
+        return "Reparos" if delta < 0 else "Reparo (aumentando o Backlog)"
     return grupo
