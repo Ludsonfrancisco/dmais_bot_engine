@@ -204,7 +204,6 @@ async def run_scheduler() -> None:
             now = _now()
 
             # Reset state on new day
-            global _sent_morning_today, _sent_cycles
             today = _today_str()
             if _sent_morning_today and _sent_morning_today != today:
                 _sent_morning_today = None
