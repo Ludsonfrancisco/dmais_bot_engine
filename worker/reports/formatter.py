@@ -103,8 +103,8 @@ def _format_city_radar(city_deltas: dict, has_previous: bool) -> str:
     if not has_previous or not city_deltas:
         return ""
 
-    radar_groups = {"REPARO", "ATIVACAO", "CANCELAMENTO"}
-    skip_groups = {"ME", "SERVICOS", "SERVIÇOS", "Cancelamento Desc. CAB.", "Moni. CCRI"}
+    radar_groups = {"REPARO", "ATIVACAO"}
+    skip_groups = {"ME", "SERVICOS", "SERVIÇOS", "CANCELAMENTO", "Cancelamento Desc. CAB.", "Moni. CCRI"}
 
     improvements = []   # delta < 0 (qualquer grupo)
     sales_list = []     # delta > 0, ATIVACAO
@@ -154,8 +154,6 @@ def _format_city_radar(city_deltas: dict, has_previous: bool) -> str:
 
 def _radar_group_name(grupo: str, delta: int) -> str:
     """Nome do grupo no radar, sensível ao contexto (positivo/negativo)."""
-    if grupo == "CANCELAMENTO":
-        return "Cancelamentos"
     if grupo == "ATIVACAO":
         return "Instalação pendente" if delta < 0 else "Instalação"
     if grupo == "REPARO":

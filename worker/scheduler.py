@@ -5,6 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from worker.logs import get_logger
+from worker.redis_queue import redis_queue
 from worker.reports.formatter import format_cycle_report, format_morning_message
 from worker.reports.stats import get_deltas, save_snapshot
 from worker.reports.data import (
@@ -28,6 +29,10 @@ _FIRST_CYCLE_MINUTE = 10
 _INTERVAL_HOURS = 2
 _LAST_CYCLE_HOUR = 20
 _LAST_CYCLE_MINUTE = 10
+
+# Redis key for sent cycles persistence
+_SENT_CYCLES_KEY = "reports:sent_cycles"
+_CYCLES_TTL = 86400  # 24h
 
 # Prevent duplicate sends
 _sent_morning_today: str | None = None
@@ -72,6 +77,28 @@ def _now() -> datetime:
 
 def _today_str() -> str:
     return _now().strftime("%Y-%m-%d")
+
+
+async def _load_sent_cycles() -> set[str]:
+    """Load previously sent cycle keys from Redis (survives restart)."""
+    try:
+        client = redis_queue._ensure_client()
+        raw = await client.get(_SENT_CYCLES_KEY)
+        if raw:
+            return set(raw.split(","))
+    except Exception:
+        pass
+    return set()
+
+
+async def _save_sent_cycles() -> None:
+    """Persist sent cycle keys to Redis."""
+    try:
+        client = redis_queue._ensure_client()
+        val = ",".join(sorted(_sent_cycles))
+        await client.set(_SENT_CYCLES_KEY, val, ex=_CYCLES_TTL)
+    except Exception:
+        pass
 
 
 async def _send_morning(ctx_page) -> None:
@@ -160,6 +187,16 @@ async def _send_cycle(hour_label: str, ctx_browser) -> None:
 
 async def run_scheduler() -> None:
     """Main scheduler loop. Runs forever, checking every 60 seconds."""
+    global _sent_morning_today, _sent_cycles
+
+    # Restore sent cycles from Redis (survives container restart)
+    try:
+        _sent_cycles = await _load_sent_cycles()
+        if _sent_cycles:
+            logger.info("scheduler.redis_restored", cycles=sorted(_sent_cycles))
+    except Exception:
+        pass
+
     logger.info("scheduler.start")
 
     while True:
@@ -172,6 +209,11 @@ async def run_scheduler() -> None:
             if _sent_morning_today and _sent_morning_today != today:
                 _sent_morning_today = None
                 _sent_cycles.clear()
+                try:
+                    client = redis_queue._ensure_client()
+                    await client.delete(_SENT_CYCLES_KEY)
+                except Exception:
+                    pass
 
             # Morning message at 06:00
             if (
@@ -197,6 +239,7 @@ async def run_scheduler() -> None:
                 hour_label = f"{cycle_hour:02d}:{cycle_minute:02d}"
                 await _send_cycle(hour_label, None)
                 logger.info("scheduler.cycle_sent", hour=hour_label)
+                await _save_sent_cycles()
 
             await asyncio.sleep(60)
 
