@@ -45,58 +45,54 @@ def format_cycle_report(
     """Relatório bi-horário com variação e radar de cidades."""
 
     h = int(hour.split(":")[0])
-    next_h = h + 2
-    window = f"{h:02d}h às {next_h:02d}h"
+    window = f"{h:02d}h"
 
     group_lines = _format_group_section(group_counts, group_deltas, has_previous)
     radar_lines = _format_city_radar(city_deltas, has_previous)
+    footer_parts = [f"🕐 Entrante {entrante}"]
+    if download:
+        footer_parts.append(f"Base {download}")
+    footer = "  ·  ".join(footer_parts)
 
-    return (
-        f"📊 *GIRO DA OPERAÇÃO | {window}*\n"
-        f"\n"
-        f"{group_lines}"
-        f"\n\n"
-        f"{radar_lines}"
-        f"\n\n"
-        f"⏱️ Último entrante: {entrante} | Base: {download}\n"
-        f"📎 Anexos: Backlog Geral, Área Dmais e Reparos Abortados"
-    )
+    parts = [
+        f"📊 *GIRO DA OPERAÇÃO*",
+        f"_{window}_",
+        "",
+        group_lines,
+    ]
+    if radar_lines:
+        parts.append("")
+        parts.append(radar_lines)
+    parts.append("")
+    parts.append(f"_{footer}_")
+    return "\n".join(parts)
 
 
 def _format_group_section(counts: dict, deltas: dict, has_previous: bool) -> str:
-    # Order: Reparo, Ativação, ME, Serviços
     groups_order = [
-        ("REPARO", "🔧 Reparo:"),
-        ("ATIVACAO", "⚡ Ativação:"),
-        ("ME", "🏠 ME:"),
-        ("SERVICOS", "🛠️ Serviços:"),
-        ("SERVIÇOS", "🛠️ Serviços:"),
+        ("REPARO", "🔧 Reparos"),
+        ("ATIVACAO", "⚡ Instalações"),
+        ("ME", "🏠 MEs"),
+        ("SERVICOS", "🛠️ Serviços"),
+        ("SERVIÇOS", "🛠️ Serviços"),
     ]
-    seen = set()
+    seen_labels = set()
+    lines = []
 
-    if not has_previous:
-        lines = ["📈 *CENÁRIO GERAL (CONTAGEM ATUAL):*"]
-        for key, label in groups_order:
-            if key in seen:
-                continue
-            seen.add(key)
-            total = counts.get(key, 0)
-            lines.append(f"      {label} {total}")
-        return "\n".join(lines)
-
-    lines = ["📈 *CENÁRIO GERAL (VARIAÇÃO ÚLTIMAS 2H):*"]
     for key, label in groups_order:
-        if key in seen:
+        if label in seen_labels:
             continue
-        seen.add(key)
+        seen_labels.add(label)
         total = counts.get(key, 0)
-        delta = deltas.get(key, 0)
-        if delta > 0:
-            lines.append(f"      {label} {total} (+{delta})")
-        elif delta < 0:
-            lines.append(f"      {label} {total} ({delta})")
-        elif total > 0:
-            lines.append(f"      {label} {total}")
+        delta = deltas.get(key, 0) if has_previous else 0
+
+        if has_previous and delta > 0:
+            lines.append(f"    {label}  {total}  ↑{delta}")
+        elif has_previous and delta < 0:
+            lines.append(f"    {label}  {total}  ↓{abs(delta)}")
+        else:
+            lines.append(f"    {label}  {total}  —")
+
     return "\n".join(lines)
 
 
@@ -105,45 +101,50 @@ def _format_city_radar(city_deltas: dict, has_previous: bool) -> str:
         return ""
 
     priority_groups = {"REPARO": 2, "ATIVACAO": 2}
+    skip_groups = {"ME", "SERVICOS", "SERVIÇOS"}
     improvements = []
+    ativacao_ritmo = []  # Ativação caindo = executando bem
     warnings_list = []
+    sales_list = []
 
     for cidade, groups in city_deltas.items():
         for grupo, delta in groups.items():
+            if grupo in skip_groups:
+                continue
             weight = priority_groups.get(grupo, 1)
-            if delta < 0 and grupo == "REPARO":
-                improvements.append((abs(delta) * weight, cidade, grupo, delta))
-            elif delta > 0 and grupo == "ATIVACAO":
-                improvements.append((abs(delta) * weight, cidade, grupo, delta))
-            elif delta > 0 and grupo == "REPARO":
-                warnings_list.append((abs(delta) * weight, cidade, grupo, delta))
-            elif delta < 0 and grupo == "ATIVACAO":
-                warnings_list.append((abs(delta) * weight, cidade, grupo, delta))
-            elif delta > 0:
-                warnings_list.append((abs(delta) * weight, cidade, grupo, delta))
+            if delta < 0 and grupo == "ATIVACAO":
+                ativacao_ritmo.append((abs(delta) * weight, cidade, delta))
             elif delta < 0:
                 improvements.append((abs(delta) * weight, cidade, grupo, delta))
+            elif delta > 0 and grupo == "ATIVACAO":
+                sales_list.append((abs(delta) * weight, cidade, delta))
+            elif delta > 0:
+                warnings_list.append((abs(delta) * weight, cidade, grupo, delta))
 
     improvements.sort(key=lambda x: -x[0])
+    ativacao_ritmo.sort(key=lambda x: -x[0])
     warnings_list.sort(key=lambda x: -x[0])
+    sales_list.sort(key=lambda x: -x[0])
 
-    lines = ["📍 *RADAR DE CIDADES (ÚLTIMAS 2H):*"]
+    lines = []
 
     if improvements:
         _, cidade, grupo, delta = improvements[0]
         gname = _group_name(grupo)
-        if delta < 0:
-            lines.append(f"✅ Destaque: {cidade} ({abs(delta)} {gname} no Backlog)")
-        else:
-            lines.append(f"✅ Destaque: {cidade} (+{delta} {gname} concluídas)")
+        lines.append(f"✅ {cidade}: {abs(delta)} {gname} a menos")
+
+    if ativacao_ritmo:
+        _, cidade, delta = ativacao_ritmo[0]
+        lines.append(f"⚡ {cidade}: -{abs(delta)} instalações, no caminho certo ✅")
+
+    if sales_list:
+        _, cidade, delta = sales_list[0]
+        lines.append(f"🙌 {cidade} vendeu +{delta} instalações ⚠️")
 
     if warnings_list:
         _, cidade, grupo, delta = warnings_list[0]
         gname = _group_name(grupo)
-        if delta > 0:
-            lines.append(f"⚠️ Atenção: {cidade} (+{delta} {gname} pendentes)")
-        else:
-            lines.append(f"⚠️ Atenção: {cidade} (Queda no ritmo de {gname})")
+        lines.append(f"⚠️ {cidade}: +{delta} {gname}")
 
     return "\n".join(lines)
 
