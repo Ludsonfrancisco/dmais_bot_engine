@@ -155,7 +155,7 @@ async def _send_cycle(hour_label: str, ctx_browser) -> None:
         await evolution_client.send_group_text_message(dest.group_jid, text)
 
     global _sent_cycles
-    _sent_cycles.add(f"{_today_str()}:{hour_label}")
+    _sent_cycles.add(f"{_today_str()}:{hour_label.split(':')[0]}")
 
 
 async def run_scheduler() -> None:
