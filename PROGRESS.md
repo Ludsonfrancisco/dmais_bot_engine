@@ -1,8 +1,49 @@
 # PROGRESS — dmais_bot_engine (Critérios "Pronto")
 
-> Última atualização: 2026-05-21
-> Commit mais recente: `010c30d` (circuit breaker + timeout)
-> Branch `main` com 4 critérios + melhorias de resiliencia mergeados. Commit e push feitos pelo agente (autorizacao explicita).
+> Última atualização: 2026-06-10
+> Commit mais recente: `6b4ad0d` (docs: atualiza PROGRESS.md com pendencias para terminar mais tarde)
+> Fase atual: Report Automation — enviar relatórios/prints do dmais_portal (Backlog/Prazo) para grupo WhatsApp de testes antes de liberar grupo oficial.
+
+---
+
+## Sprint Report Automation — WhatsApp Reports
+
+### Objetivo da fase
+
+Transformar/estender o `dmais_bot_engine` em publicador de relatórios automáticos do `dmais_portal`, com envios por cron para WhatsApp. A base oficial continua sendo o portal; o bot orquestra captura de prints, montagem do texto e envio via EvolutionAPI.
+
+### Regra operacional obrigatória
+
+Nenhum relatório vai direto para o grupo oficial. Todo fluxo começa em `WHATSAPP_TEST_GROUP_JID`; `WHATSAPP_REPORT_GROUP_JID` só é usado depois de homologação explícita.
+
+### Sprints
+
+- **Sprint 0 — Preparação/alinhamento**: corrigir lint/CI, documentar função de relatórios, adicionar variáveis futuras em `.env.example` e validar testes/config.
+- **Sprint 1 — Envio seguro para grupo de testes**: envio de texto para grupo WhatsApp com `REPORT_TARGETS=test`.
+- **Sprint 2 — Prints do portal**: captura autenticada de `/backlog/` e `/prazo-atendimento/`.
+- **Sprint 3 — Envio de imagens**: envio dos prints para o grupo de testes com caption de ambiente.
+- **Sprint 4 — Relatórios textuais**: dados atuais do portal, respeitando snapshot mais recente, recálculo de SLA, grupos padrão sem CANCELAMENTO e prioridade de sem técnico.
+- **Sprint 5 — Cron scheduler**: jobs com timezone `America/Sao_Paulo`, endpoint de status, proteção contra duplicidade.
+- **Sprint 6 — Homologação EasyPanel**: deploy em modo teste com volumes persistentes e WhatsApp pareado.
+- **Sprint 7 — Homologação funcional**: ajuste de textos, prints, horários e thresholds no grupo de testes.
+- **Sprint 8 — Liberação oficial**: ativação controlada no grupo oficial após aprovação.
+
+### Status Sprint 0
+
+- **Executor responsável**: Hermes Agent
+- **Status**: CONCLUÍDO
+- **Já validado**:
+  - Repo local encontrado em `/home/ludsoncorrea/projetos/dmais_bot_engine`
+  - Projeto não está no EasyPanel/Swarm
+  - CI GitHub falhava no lint, testes passavam
+- **Correções desta Sprint**:
+  - Removido `import time` não usado em `worker/tests/test_circuit_breaker.py`
+  - Removido alias não usado `mock_set_state` em `worker/tests/test_handler_enviar_slots.py`
+  - Documentado Report Automation em `README.md`, `.env.example` e `PROGRESS.md`
+- **Validação final**:
+  - `.venv/bin/python -m ruff check worker/` → All checks passed!
+  - `.venv/bin/python -m pytest worker/tests/ -q` → 107 passed
+  - `docker compose --env-file /tmp/dmais_bot_engine.env config --quiet` → passou
 
 ---
 

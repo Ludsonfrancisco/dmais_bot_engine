@@ -5,7 +5,6 @@ against real Redis semantics — per-endpoint keys, pipelines, TTLs and all.
 """
 
 import asyncio
-import time
 
 import fakeredis.aioredis
 import pytest

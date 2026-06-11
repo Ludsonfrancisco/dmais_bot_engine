@@ -1,12 +1,14 @@
 # dmais_bot_engine
 
-> Motor local de disparo de mensagens WhatsApp para confirmação de coletas — Logística Reversa DMais.
+> Motor WhatsApp DMais: originalmente criado para confirmação de coletas da Logística Reversa; fase atual: publicador de relatórios automáticos do dmais_portal em grupos WhatsApp.
 
 ---
 
 ## Visão Geral
 
-O `dmais_bot_engine` é um **motor autocontido**, orquestrado via Docker Compose, responsável por:
+> **Fase atual (Sprint Report Automation):** o `dmais_bot_engine` será estendido para enviar relatórios e prints das páginas **Backlog** e **Prazo de Atendimento** do `dmais_portal` em um **grupo WhatsApp de testes**. O envio para grupo oficial só será habilitado depois de homologação explícita.
+
+O `dmais_bot_engine` é um **motor autocontido**, orquestrado via Docker Compose. O fluxo original de Logística Reversa continua preservado e é responsável por:
 
 1. **Buscar agendamentos pendentes** na API Django (polling periódico, 60s).
 2. **Enviar mensagens WhatsApp** (texto plano com opções numeradas, branding AT3 Internet) via EvolutionAPI (Baileys).
@@ -15,6 +17,16 @@ O `dmais_bot_engine` é um **motor autocontido**, orquestrado via Docker Compose
 5. **Gerenciar filas e idempotência** com Redis (rate-limit 4 msg/min com jitter aleatório, idempotência por event_id, lock por chat).
 
 O motor **não possui banco de dados próprio** — todo estado durável vive na API Django. O Redis serve como memória operacional (filas, duplicidade, rate limiting, **estado da conversa por telefone**).
+
+### Fase Report Automation
+
+Nesta fase, o bot passa a atuar também como **publicador de relatórios WhatsApp** conectado ao `dmais_portal`:
+
+1. Captura prints autenticados das páginas `/backlog/` e `/prazo-atendimento/`.
+2. Monta relatórios textuais a partir da base atual do portal.
+3. Envia primeiro para `WHATSAPP_TEST_GROUP_JID`.
+4. Só libera `WHATSAPP_REPORT_GROUP_JID` depois da homologação.
+5. Agenda envios por cron usando `REPORT_TIMEZONE=America/Sao_Paulo`.
 
 > ⚠️ **Mudança arquitetural (May 2026):** O PRD original especificava WhatsApp List Messages, mas a Meta as deprecou no protocolo Web/Multi-Device. O motor agora usa **texto plano com opções numeradas (1/2/3)** e máquina de estados multi-etapas. Detalhes técnicos completos em [CLAUDE.md](./CLAUDE.md).
 
@@ -83,6 +95,14 @@ Edite o `.env` e preencha os valores reais:
 | `MAX_MESSAGES_PER_MINUTE`   | Limite de envios por minuto (anti-bloqueio)   | `4`                         |
 | `LOG_LEVEL`                 | Nível de log (`DEBUG`/`INFO`/`WARNING`/`ERROR`)| `INFO`                     |
 | `WORKER_HTTP_PORT`          | Porta HTTP do worker (FastAPI)                | `8000`                      |
+| `REPORTS_ENABLED`           | Liga/desliga crons de relatórios              | `false`                     |
+| `REPORT_TARGETS`            | Destinos: `test`, `production`, `test,production` | `test`                  |
+| `WHATSAPP_TEST_GROUP_JID`   | Grupo WhatsApp de homologação                 | —                           |
+| `WHATSAPP_REPORT_GROUP_JID` | Grupo WhatsApp oficial                        | —                           |
+| `REPORT_TIMEZONE`           | Timezone dos crons/relatórios                 | `America/Sao_Paulo`         |
+| `DMAIS_PORTAL_URL`          | URL do portal para prints/dados               | `http://localhost:8001`     |
+| `DMAIS_PORTAL_EMAIL`        | Email de login no portal                      | —                           |
+| `DMAIS_PORTAL_PASSWORD`     | Senha de login no portal                      | —                           |
 
 ### 3. Subir e validar a stack
 

@@ -12,7 +12,7 @@ async def test_handle_enviar_slots_success():
     
     with patch("worker.handlers.enviar_slots.django_client.listar_slots", new_callable=AsyncMock) as mock_listar, \
          patch("worker.handlers.enviar_slots.evolution_client.send_text_message", new_callable=AsyncMock) as mock_send_text, \
-         patch("worker.handlers.enviar_slots.redis_queue.set_state", new_callable=AsyncMock) as mock_set_state:
+         patch("worker.handlers.enviar_slots.redis_queue.set_state", new_callable=AsyncMock):
         
         mock_listar.return_value = mock_slots
         
