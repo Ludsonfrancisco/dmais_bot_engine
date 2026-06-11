@@ -71,6 +71,27 @@ Nenhum relatório vai direto para o grupo oficial. Todo fluxo começa em `WHATSA
   - `.venv/bin/python -m pytest worker/tests/ -q` → 116 passed
   - `docker compose --env-file /tmp/dmais_bot_engine.env config --quiet` → passou
 
+### Status Sprint 2
+
+- **Executor responsável**: Hermes Agent
+- **Status**: CONCLUÍDO
+- **Objetivo**: captura de screenshots autenticados das páginas `/backlog/` e `/prazo-atendimento/` do `dmais_portal` via Playwright headless.
+- **Entregas desta Sprint**:
+  - Adicionado `playwright` em `worker/requirements.txt`.
+  - Dockerfile atualizado com deps de Chromium + `playwright install chromium`.
+  - Criado `worker/reports/screenshots.py` com `capture_portal_page()` (login + navegação + screenshot).
+  - Criado endpoint manual `POST /reports/debug-screenshot` (retorna base64).
+  - Credenciais `DMAIS_PORTAL_EMAIL`/`DMAIS_PORTAL_PASSWORD` são exigidas; sem elas, o endpoint recusa com erro claro.
+- **Testes adicionados**:
+  - `worker/tests/test_screenshots.py` (3 testes: URL ausente, credenciais ausentes, fluxo completo com mock)
+- **Validação final**:
+  - `.venv/bin/python -m ruff check worker/` → All checks passed!
+  - `.venv/bin/python -m ruff format --check worker/` → all formatted
+  - `.venv/bin/python -m pytest worker/tests/ -q` → 119 passed
+  - `docker compose --env-file /tmp/dmais_bot_engine.env config --quiet` → passou
+  - `docker compose build worker` (com Chromium) → sucesso
+- **Pendência operacional**: preencher `DMAIS_PORTAL_EMAIL` no `.env` para testar screenshot real.
+
 ---
 
 ## Modelo de Delegação por Criticidade

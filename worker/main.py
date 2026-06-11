@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import random
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
@@ -19,6 +20,7 @@ from worker.handlers import (
 from worker.handlers.on_response import cleanup_chat_locks
 from worker.logs import configure_logging, get_logger, new_correlation_id
 from worker.redis_queue import redis_queue
+from worker.reports.screenshots import capture_portal_page
 from worker.reports.sender import send_report_text
 from worker.settings import settings
 
@@ -276,3 +278,23 @@ class _ReportDebugTextBody(BaseModel):
 async def debug_send_report_text(body: _ReportDebugTextBody):
     results = await send_report_text(body.text)
     return {"status": "ok", "sent": results}
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-screenshot  (Sprint 2 — Print autenticado do portal)
+# ---------------------------------------------------------------------------
+
+
+class _ReportDebugScreenshotBody(BaseModel):
+    path: str = "/backlog/"
+
+
+@app.post("/reports/debug-screenshot")
+async def debug_screenshot(body: _ReportDebugScreenshotBody):
+    screenshot_bytes = await capture_portal_page(body.path)
+    return {
+        "status": "ok",
+        "path": body.path,
+        "size_bytes": len(screenshot_bytes),
+        "image_base64": base64.b64encode(screenshot_bytes).decode("ascii"),
+    }
