@@ -32,6 +32,7 @@ _12_SLOTS = [
 # build_initial_text — 3 opções com branding AT3
 # ─────────────────────────────────────────────────────────────
 
+
 def test_initial_text_has_at3_branding_and_3_options():
     telefone, texto = build_initial_text(_AGENDAMENTO)
     assert telefone == "5511999998888"
@@ -62,6 +63,7 @@ def test_initial_text_no_url_in_output():
 # build_periodo_text — pergunta de manhã/tarde
 # ─────────────────────────────────────────────────────────────
 
+
 def test_periodo_text_lists_manha_tarde_para_data():
     texto = build_periodo_text("2026-05-19")
     assert "Terça, 19/05" in texto
@@ -73,6 +75,7 @@ def test_periodo_text_lists_manha_tarde_para_data():
 # ─────────────────────────────────────────────────────────────
 # _proximos_dias_uteis — geração dinâmica de dias úteis
 # ─────────────────────────────────────────────────────────────
+
 
 def test_proximos_dias_uteis_retorna_3_por_default():
     datas = _proximos_dias_uteis(data_base=date(2026, 5, 18))  # segunda
@@ -97,6 +100,7 @@ def test_proximos_dias_uteis_n_customizavel():
 # build_datas_remarcar_text — datas dinâmicas
 # ─────────────────────────────────────────────────────────────
 
+
 def test_datas_remarcar_returns_3_dates_and_mapping():
     texto, mapping = build_datas_remarcar_text(data_base=date(2026, 5, 18))
     assert len(mapping) == 3
@@ -112,6 +116,7 @@ def test_datas_remarcar_returns_3_dates_and_mapping():
 # slot_iso_de — converte data + período em ISO 8601
 # ─────────────────────────────────────────────────────────────
 
+
 def test_slot_iso_de_manha_retorna_08h():
     assert slot_iso_de("2026-05-19", "MANHA") == "2026-05-19T08:00:00-03:00"
 
@@ -124,6 +129,7 @@ def test_slot_iso_de_tarde_retorna_12h():
 # build_horarios_text — fluxo atual com texto numerado
 # ─────────────────────────────────────────────────────────────
 
+
 def test_build_horarios_text_limits_to_ten():
     _, _, mapping = build_horarios_text(_AGENDAMENTO, _12_SLOTS)
     assert len(mapping) == 10
@@ -135,6 +141,12 @@ def test_build_horarios_text_mapping_resolves_to_iso():
 
 
 def test_build_horarios_text_title_pt_br():
-    slots = [{"slot_id": 1, "inicio": "2026-05-11T09:00:00-03:00", "fim": "2026-05-11T11:00:00-03:00"}]
+    slots = [
+        {
+            "slot_id": 1,
+            "inicio": "2026-05-11T09:00:00-03:00",
+            "fim": "2026-05-11T11:00:00-03:00",
+        }
+    ]
     _, texto, _ = build_horarios_text(_AGENDAMENTO, slots)
     assert "Seg" in texto and "11/05" in texto

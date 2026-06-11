@@ -37,9 +37,7 @@ class RedisQueue:
 
     async def is_duplicate_event(self, event_id: str) -> bool:
         """Retorna True se o evento já foi processado (duplicata); False se novo."""
-        result = await self._ensure_client().set(
-            f"evt:{event_id}", 1, nx=True, ex=_TTL
-        )
+        result = await self._ensure_client().set(f"evt:{event_id}", 1, nx=True, ex=_TTL)
         # SET NX retorna True se gravou (novo) ou None se já existia (duplicata)
         return result is None
 
@@ -150,9 +148,7 @@ class RedisQueue:
     async def scan_timeouts(self) -> list[str]:
         """Retorna telefones cujo deadline já passou (score <= now)."""
         now = _time.time()
-        members = await self._ensure_client().zrangebyscore(
-            _TIMEOUT_WATCH, "-inf", now
-        )
+        members = await self._ensure_client().zrangebyscore(_TIMEOUT_WATCH, "-inf", now)
         return members  # list[str]
 
     # ------------------------------------------------------------------

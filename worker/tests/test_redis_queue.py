@@ -56,6 +56,7 @@ async def test_clear_activity_removes_sorted_set_entry(rq):
 
 async def test_scan_timeouts_returns_expired(rq):
     import time
+
     client = rq._ensure_client()
     await client.zadd("timeout_watch", {"phone1": time.time() - 100})
     await client.zadd("timeout_watch", {"phone2": time.time() + 10000})

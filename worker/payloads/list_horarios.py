@@ -16,7 +16,9 @@ def _format_title(inicio: str, fim: str) -> str:
     return f"{dia} {data} às {dt_i.strftime('%Hh')}-{dt_f.strftime('%Hh')}"
 
 
-def build_horarios_text(agendamento: dict, slots: list[dict]) -> tuple[str, str, dict[str, str]]:
+def build_horarios_text(
+    agendamento: dict, slots: list[dict]
+) -> tuple[str, str, dict[str, str]]:
     """Monta texto da mensagem de horários numerados (até 10).
 
     Retorna (telefone, texto, mapping) onde mapping = {"1": "<iso>", "2": "<iso>", ...}

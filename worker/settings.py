@@ -54,7 +54,9 @@ class Settings(BaseSettings):
     DMAIS_PORTAL_EMAIL: str = ""
     DMAIS_PORTAL_PASSWORD: str = ""
 
-    @field_validator("DJANGO_API_BASE_URL", "EVOLUTION_API_URL", "DMAIS_PORTAL_URL", mode="before")
+    @field_validator(
+        "DJANGO_API_BASE_URL", "EVOLUTION_API_URL", "DMAIS_PORTAL_URL", mode="before"
+    )
     @classmethod
     def normalize_http_url(cls, v: str) -> str:
         value = str(v).strip().rstrip("/")
@@ -63,7 +65,9 @@ class Settings(BaseSettings):
             raise ValueError("must be an absolute http(s) URL")
         return value
 
-    @field_validator("POLLING_INTERVAL_SECONDS", "MAX_MESSAGES_PER_MINUTE", mode="after")
+    @field_validator(
+        "POLLING_INTERVAL_SECONDS", "MAX_MESSAGES_PER_MINUTE", mode="after"
+    )
     @classmethod
     def must_be_positive(cls, v: int) -> int:
         if v <= 0:

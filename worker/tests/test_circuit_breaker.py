@@ -18,6 +18,7 @@ from worker.redis_queue import redis_queue
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(autouse=True)
 def fake_redis():
     """Point the shared redis_queue singleton at an isolated FakeRedis."""
@@ -44,6 +45,7 @@ async def _fail(breaker: CircuitBreaker, times: int, endpoint: str = "default") 
 # ---------------------------------------------------------------------------
 # State transitions
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_initial_state_is_closed():
@@ -144,6 +146,7 @@ async def test_reset_forces_closed(fake_redis):
 # Per-endpoint tracking
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_per_endpoint_isolation():
     """Failures on one endpoint must not open the circuit for another."""
@@ -168,6 +171,7 @@ async def test_default_endpoint_keys(fake_redis):
 # Soft warning (degraded) before full OPEN
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_soft_warning_logged_before_open():
     """At _SOFT_WARNING_THRESHOLD failures (still below failure_threshold) a
@@ -189,7 +193,9 @@ async def test_no_degraded_warning_below_warning_threshold():
     breaker = _make_breaker(failure_threshold=5)
     with patch("worker.circuit_breaker.logger") as mock_log:
         await _fail(breaker, _SOFT_WARNING_THRESHOLD - 1)
-        events = [c.kwargs.get("reason") or c.args[0] for c in mock_log.warning.call_args_list]
+        events = [
+            c.kwargs.get("reason") or c.args[0] for c in mock_log.warning.call_args_list
+        ]
 
     assert not any("circuit.degraded" in str(e) for e in events), f"Events: {events}"
 
@@ -197,6 +203,7 @@ async def test_no_degraded_warning_below_warning_threshold():
 # ---------------------------------------------------------------------------
 # Exponential backoff
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_effective_timeout_doubles_per_open(fake_redis):
@@ -268,14 +275,16 @@ async def test_success_resets_open_count(fake_redis):
 # Integration-style tests with EvolutionClient
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_evolution_client_respects_circuit_breaker():
     """EvolutionClient.send_text_message should check circuit breaker before calling."""
     from worker.evolution_client import CircuitOpenError, EvolutionClient
 
-    with patch("worker.evolution_client.circuit_breaker") as mock_breaker, \
-         patch("worker.evolution_client.settings") as mock_settings:
-
+    with (
+        patch("worker.evolution_client.circuit_breaker") as mock_breaker,
+        patch("worker.evolution_client.settings") as mock_settings,
+    ):
         mock_settings.EVOLUTION_API_URL = "http://test:8080"
         mock_settings.EVOLUTION_API_KEY = "test-key"
         mock_settings.EVOLUTION_INSTANCE_NAME = "test"
@@ -304,5 +313,10 @@ def test_server_errors_remain_retryable():
     from worker.evolution_client import _is_retryable
 
     resp = httpx.Response(503, request=httpx.Request("POST", "http://x"))
-    assert _is_retryable(httpx.HTTPStatusError("boom", request=resp.request, response=resp)) is True
+    assert (
+        _is_retryable(
+            httpx.HTTPStatusError("boom", request=resp.request, response=resp)
+        )
+        is True
+    )
     assert _is_retryable(httpx.ConnectError("down")) is True

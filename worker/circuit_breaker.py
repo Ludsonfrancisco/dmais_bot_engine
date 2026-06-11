@@ -79,11 +79,22 @@ class CircuitBreaker:
         if state == CircuitState.OPEN:
             effective_timeout = await self._effective_timeout(endpoint)
             last_failure = await self._get_last_failure(endpoint)
-            if last_failure is not None and (time.time() - last_failure) >= effective_timeout:
+            if (
+                last_failure is not None
+                and (time.time() - last_failure) >= effective_timeout
+            ):
                 await self._set_state(endpoint, CircuitState.HALF_OPEN)
-                logger.info("circuit.half_open", endpoint=endpoint, recovery_timeout=effective_timeout)
+                logger.info(
+                    "circuit.half_open",
+                    endpoint=endpoint,
+                    recovery_timeout=effective_timeout,
+                )
                 return True
-            logger.warning("circuit.open", endpoint=endpoint, reason="breaker is OPEN, skipping call")
+            logger.warning(
+                "circuit.open",
+                endpoint=endpoint,
+                reason="breaker is OPEN, skipping call",
+            )
             return False
 
         # HALF_OPEN - allow exactly one test call
@@ -92,6 +103,7 @@ class CircuitBreaker:
     def record_success(self, endpoint: str = _DEFAULT_ENDPOINT) -> None:
         """Record a successful call - reset failures and close the circuit."""
         import asyncio
+
         asyncio.ensure_future(self._record_success_async(endpoint))
 
     async def record_success_async(self, endpoint: str = _DEFAULT_ENDPOINT) -> None:
@@ -150,7 +162,10 @@ class CircuitBreaker:
         if state == CircuitState.OPEN:
             effective_timeout = await self._effective_timeout(endpoint)
             last_failure = await self._get_last_failure(endpoint)
-            if last_failure is not None and (time.time() - last_failure) >= effective_timeout:
+            if (
+                last_failure is not None
+                and (time.time() - last_failure) >= effective_timeout
+            ):
                 await self._set_state(endpoint, CircuitState.HALF_OPEN)
                 return False
             return True
@@ -183,10 +198,14 @@ class CircuitBreaker:
     # ------------------------------------------------------------------
 
     async def _set_state(self, endpoint: str, state: CircuitState) -> None:
-        await redis_queue._ensure_client().set(self._key(endpoint, "state"), state.value, ex=_TTL)
+        await redis_queue._ensure_client().set(
+            self._key(endpoint, "state"), state.value, ex=_TTL
+        )
 
     async def _get_last_failure(self, endpoint: str) -> float | None:
-        val = await redis_queue._ensure_client().get(self._key(endpoint, "last_failure"))
+        val = await redis_queue._ensure_client().get(
+            self._key(endpoint, "last_failure")
+        )
         return float(val) if val else None
 
     async def _increment_open_count(self, endpoint: str) -> None:

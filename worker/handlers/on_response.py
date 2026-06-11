@@ -23,32 +23,45 @@ _FALLBACK_PREFIX = "Desculpe, não entendi sua resposta. 🙏\n\n"
 _MAX_ERRORS = 3
 
 # Estados (prefixo + JSON opcional como contexto)
-STATE_AGUARDANDO_PERIODO          = "AGUARDANDO_PERIODO:"           # ctx: {"data": "YYYY-MM-DD"}
-STATE_AGUARDANDO_DATA_REMARCAR    = "AGUARDANDO_DATA_REMARCAR:"     # ctx: {"1": "YYYY-MM-DD", ...}
-STATE_AGUARDANDO_PERIODO_REMARCAR = "AGUARDANDO_PERIODO_REMARCAR:"  # ctx: {"data": "YYYY-MM-DD"}
-STATE_AGUARDANDO_TEXTO_ENTREGUE   = "AGUARDANDO_TEXTO_ENTREGUE"     # sem ctx
+STATE_AGUARDANDO_PERIODO = "AGUARDANDO_PERIODO:"  # ctx: {"data": "YYYY-MM-DD"}
+STATE_AGUARDANDO_DATA_REMARCAR = (
+    "AGUARDANDO_DATA_REMARCAR:"  # ctx: {"1": "YYYY-MM-DD", ...}
+)
+STATE_AGUARDANDO_PERIODO_REMARCAR = (
+    "AGUARDANDO_PERIODO_REMARCAR:"  # ctx: {"data": "YYYY-MM-DD"}
+)
+STATE_AGUARDANDO_TEXTO_ENTREGUE = "AGUARDANDO_TEXTO_ENTREGUE"  # sem ctx
 
 # Numérico → ID lógico inicial (CONFIRMAR/REMARCAR/JA_ENTREGUE)
 _NUM_TO_INITIAL = {str(i): _id for i, (_id, _) in enumerate(OPCOES_INICIAIS, start=1)}
 # Written-out numbers (Portuguese) → same mapping
 _NUM_EXTENSO_TO_INITIAL = {
-    "um": "CONFIRMAR", "dois": "REMARCAR", "tres": "JA_ENTREGUE",
+    "um": "CONFIRMAR",
+    "dois": "REMARCAR",
+    "tres": "JA_ENTREGUE",
     "três": "JA_ENTREGUE",
 }
 # Numérico → ID período (MANHA/TARDE)
 _NUM_TO_PERIODO = {str(i): _id for i, (_id, _) in enumerate(PERIODOS, start=1)}
 # Written-out numbers (Portuguese) → same mapping
 _NUM_EXTENSO_TO_PERIODO = {
-    "um": "MANHA", "dois": "TARDE",
+    "um": "MANHA",
+    "dois": "TARDE",
 }
 
 _KEYWORD_TO_INITIAL = {
-    "confirmar": "CONFIRMAR", "confirmo": "CONFIRMAR", "sim": "CONFIRMAR",
-    "remarcar": "REMARCAR",   "remarca": "REMARCAR",   "trocar": "REMARCAR",
-    "ja entreguei": "JA_ENTREGUE", "entreguei": "JA_ENTREGUE",
+    "confirmar": "CONFIRMAR",
+    "confirmo": "CONFIRMAR",
+    "sim": "CONFIRMAR",
+    "remarcar": "REMARCAR",
+    "remarca": "REMARCAR",
+    "trocar": "REMARCAR",
+    "ja entreguei": "JA_ENTREGUE",
+    "entreguei": "JA_ENTREGUE",
 }
 _KEYWORD_TO_PERIODO = {
-    "manha": "MANHA", "manhã": "MANHA",
+    "manha": "MANHA",
+    "manhã": "MANHA",
     "tarde": "TARDE",
 }
 
@@ -93,14 +106,13 @@ def cleanup_chat_locks() -> int:
     Returns the number of locks removed. Safe to call periodically from the
     poller to prevent unbounded dict growth from one-off chats.
     """
-    stale = [
-        cid for cid, lock in _chat_locks.items()
-        if not lock.locked()
-    ]
+    stale = [cid for cid, lock in _chat_locks.items() if not lock.locked()]
     for cid in stale:
         _chat_locks.pop(cid, None)
     if stale:
-        logger.info("on_response.lock_cleanup", removed=len(stale), remaining=len(_chat_locks))
+        logger.info(
+            "on_response.lock_cleanup", removed=len(stale), remaining=len(_chat_locks)
+        )
     return len(stale)
 
 
@@ -108,8 +120,10 @@ def cleanup_chat_locks() -> int:
 # Helpers de extração do payload da EvolutionAPI
 # ---------------------------------------------------------------------------
 
+
 def _event_id(evt: dict) -> str | None:
     return evt.get("data", {}).get("key", {}).get("id")
+
 
 def _chat_id(evt: dict) -> str | None:
     """Retorna o JID do contato. Se for @lid (anonimizado pelo WhatsApp Multi-Device),
@@ -122,11 +136,14 @@ def _chat_id(evt: dict) -> str | None:
             return alt
     return raw
 
+
 def _from_me(evt: dict) -> bool:
     return evt.get("data", {}).get("key", {}).get("fromMe", False)
 
+
 def _is_upsert(evt: dict) -> bool:
     return evt.get("event") == "messages.upsert"
+
 
 def _message_text(evt: dict) -> str | None:
     msg = evt.get("data", {}).get("message", {}) or {}
@@ -135,13 +152,16 @@ def _message_text(evt: dict) -> str | None:
         return txt
     return (msg.get("extendedTextMessage") or {}).get("text")
 
+
 def _telefone(chat_id: str) -> str:
     return chat_id.split("@")[0]
+
 
 def _normalize(text: str) -> str:
     nfkd = unicodedata.normalize("NFKD", text)
     sem_acento = "".join(c for c in nfkd if not unicodedata.combining(c))
     return " ".join(sem_acento.lower().split())
+
 
 def _classify_initial(text: str) -> str | None:
     norm = _normalize(text)
@@ -151,6 +171,7 @@ def _classify_initial(text: str) -> str | None:
         return _NUM_EXTENSO_TO_INITIAL[norm]
     return _KEYWORD_TO_INITIAL.get(norm)
 
+
 def _classify_periodo(text: str) -> str | None:
     norm = _normalize(text)
     if norm in _NUM_TO_PERIODO:
@@ -159,8 +180,10 @@ def _classify_periodo(text: str) -> str | None:
         return _NUM_EXTENSO_TO_PERIODO[norm]
     return _KEYWORD_TO_PERIODO.get(norm)
 
+
 def _format_data_humana(data_str: str) -> str:
     from datetime import date as _date
+
     dias = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
     try:
         d = _date.fromisoformat(data_str)
@@ -168,9 +191,10 @@ def _format_data_humana(data_str: str) -> str:
     except (ValueError, TypeError):
         return data_str
 
+
 def _state_ctx(state: str, prefix: str) -> dict:
     """Decodifica JSON após o prefixo do estado. Retorna {} se vazio/erro."""
-    raw = state[len(prefix):]
+    raw = state[len(prefix) :]
     if not raw:
         return {}
     try:
@@ -178,6 +202,7 @@ def _state_ctx(state: str, prefix: str) -> dict:
     except _json.JSONDecodeError:
         logger.warning("on_response.bad_state_json", state=state)
         return {}
+
 
 def _webhook(event_id, agendamento_id, telefone, tipo, slot_escolhido, raw, cid):
     return {
@@ -207,6 +232,7 @@ async def _post_webhook_safe(payload: dict) -> None:
 # ---------------------------------------------------------------------------
 # Handler principal
 # ---------------------------------------------------------------------------
+
 
 async def handle(evolution_event: dict) -> None:
     """State machine multi-etapas: inicial → período/datas → confirmação.
@@ -268,7 +294,9 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
         await redis_queue.reset_error(chat_id)
         await evolution_client.send_text_message(tel, _REPLY_JA_ENTREGUE)
         await _post_webhook_safe(
-            _webhook(event_id, agendamento_id, tel, "JA_ENTREGUE", None, evolution_event, cid)
+            _webhook(
+                event_id, agendamento_id, tel, "JA_ENTREGUE", None, evolution_event, cid
+            )
         )
         logger.info("on_response.ja_entregue_texto", agendamento_id=agendamento_id)
         return
@@ -293,11 +321,23 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
                 ),
             )
             await _post_webhook_safe(
-                _webhook(event_id, agendamento_id, tel, "CONFIRMAR", slot, evolution_event, cid)
+                _webhook(
+                    event_id,
+                    agendamento_id,
+                    tel,
+                    "CONFIRMAR",
+                    slot,
+                    evolution_event,
+                    cid,
+                )
             )
-            logger.info("on_response.confirmado", slot=slot, agendamento_id=agendamento_id)
+            logger.info(
+                "on_response.confirmado", slot=slot, agendamento_id=agendamento_id
+            )
             return
-        await _handle_invalid(event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid)
+        await _handle_invalid(
+            event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid
+        )
         return
 
     # ──────────────────────────────────────────────────────────────
@@ -309,13 +349,20 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
         if data_iso:
             await redis_queue.reset_error(chat_id)
             await redis_queue.set_state(
-                tel, f"{STATE_AGUARDANDO_PERIODO_REMARCAR}{_json.dumps({'data': data_iso})}"
+                tel,
+                f"{STATE_AGUARDANDO_PERIODO_REMARCAR}{_json.dumps({'data': data_iso})}",
             )
             await redis_queue.track_activity(tel)
             await evolution_client.send_text_message(tel, build_periodo_text(data_iso))
-            logger.info("on_response.data_remarcar_escolhida", data=data_iso, agendamento_id=agendamento_id)
+            logger.info(
+                "on_response.data_remarcar_escolhida",
+                data=data_iso,
+                agendamento_id=agendamento_id,
+            )
             return
-        await _handle_invalid(event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid)
+        await _handle_invalid(
+            event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid
+        )
         return
 
     # ──────────────────────────────────────────────────────────────
@@ -338,11 +385,23 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
                 ),
             )
             await _post_webhook_safe(
-                _webhook(event_id, agendamento_id, tel, "REMARCAR", slot, evolution_event, cid)
+                _webhook(
+                    event_id,
+                    agendamento_id,
+                    tel,
+                    "REMARCAR",
+                    slot,
+                    evolution_event,
+                    cid,
+                )
             )
-            logger.info("on_response.remarcado", slot=slot, agendamento_id=agendamento_id)
+            logger.info(
+                "on_response.remarcado", slot=slot, agendamento_id=agendamento_id
+            )
             return
-        await _handle_invalid(event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid)
+        await _handle_invalid(
+            event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid
+        )
         return
 
     # ──────────────────────────────────────────────────────────────
@@ -350,7 +409,9 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
     # ──────────────────────────────────────────────────────────────
     tipo = _classify_initial(text)
     if not tipo:
-        await _handle_invalid(event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid)
+        await _handle_invalid(
+            event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid
+        )
         return
 
     await redis_queue.reset_error(chat_id)
@@ -362,7 +423,9 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
         )
         await redis_queue.track_activity(tel)
         await evolution_client.send_text_message(tel, build_periodo_text(data_iso))
-        logger.info("on_response.confirmar_pediu_periodo", agendamento_id=agendamento_id)
+        logger.info(
+            "on_response.confirmar_pediu_periodo", agendamento_id=agendamento_id
+        )
 
     elif tipo == "REMARCAR":
         texto_datas, mapping = build_datas_remarcar_text()
@@ -377,18 +440,31 @@ async def _handle_locked(evolution_event: dict, event_id: str, chat_id: str) -> 
         await redis_queue.set_state(tel, STATE_AGUARDANDO_TEXTO_ENTREGUE)
         await redis_queue.track_activity(tel)
         await evolution_client.send_text_message(tel, MSG_JA_ENTREGUE_PERGUNTA)
-        logger.info("on_response.ja_entregue_pediu_texto", agendamento_id=agendamento_id)
+        logger.info(
+            "on_response.ja_entregue_pediu_texto", agendamento_id=agendamento_id
+        )
 
 
 # ---------------------------------------------------------------------------
 # Erro / reenvio
 # ---------------------------------------------------------------------------
 
-async def _handle_invalid(event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid):
+
+async def _handle_invalid(
+    event_id, chat_id, tel, agendamento, agendamento_id, evolution_event, cid
+):
     errors = await redis_queue.incr_error(chat_id)
     logger.info("on_response.invalid", errors=errors, agendamento_id=agendamento_id)
     await _post_webhook_safe(
-        _webhook(event_id, agendamento_id, tel, "RESPOSTA_INVALIDA", None, evolution_event, cid)
+        _webhook(
+            event_id,
+            agendamento_id,
+            tel,
+            "RESPOSTA_INVALIDA",
+            None,
+            evolution_event,
+            cid,
+        )
     )
 
     if errors >= _MAX_ERRORS:

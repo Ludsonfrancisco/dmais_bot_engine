@@ -1,7 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
-from worker.reports.destinations import get_report_destinations, mask_group_jid, parse_report_targets
+from worker.reports.destinations import (
+    get_report_destinations,
+    mask_group_jid,
+    parse_report_targets,
+)
 from worker.settings import Settings
 
 
@@ -25,7 +29,9 @@ def test_settings_rejects_invalid_report_target():
 
 
 def test_get_report_destinations_test_only():
-    config = _settings(REPORT_TARGETS="test", WHATSAPP_TEST_GROUP_JID="120363000000000000@g.us")
+    config = _settings(
+        REPORT_TARGETS="test", WHATSAPP_TEST_GROUP_JID="120363000000000000@g.us"
+    )
 
     destinations = get_report_destinations(config)
 

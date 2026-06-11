@@ -30,15 +30,17 @@ async def handle(telefone: str) -> None:
     agendamento = await redis_queue.get_agendamento(telefone)
     agendamento_id = agendamento["agendamento_id"] if agendamento else None
 
-    await django_client.post_webhook({
-        "event_id": None,
-        "agendamento_id": agendamento_id,
-        "telefone": telefone,
-        "tipo": "FALHA",
-        "slot_escolhido": None,
-        "raw": {"motivo": "timeout_conversa"},
-        "correlation_id": cid,
-    })
+    await django_client.post_webhook(
+        {
+            "event_id": None,
+            "agendamento_id": agendamento_id,
+            "telefone": telefone,
+            "tipo": "FALHA",
+            "slot_escolhido": None,
+            "raw": {"motivo": "timeout_conversa"},
+            "correlation_id": cid,
+        }
+    )
 
     await redis_queue.clear_state(telefone)
     await redis_queue.clear_agendamento(telefone)

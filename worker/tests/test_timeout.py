@@ -31,7 +31,10 @@ def _event(event_id: str, text: str | None = None) -> dict:
     msg = {"conversation": text} if text is not None else {}
     return {
         "event": "messages.upsert",
-        "data": {"key": {"id": event_id, "remoteJid": _CHAT_ID, "fromMe": False}, "message": msg},
+        "data": {
+            "key": {"id": event_id, "remoteJid": _CHAT_ID, "fromMe": False},
+            "message": msg,
+        },
     }
 
 
@@ -71,6 +74,7 @@ def patch_all(fake_rq, mock_django, mock_evolution):
 # ─────────────────────────────────────────────────────────────
 # RedisQueue timeout tracking
 # ─────────────────────────────────────────────────────────────
+
 
 async def test_track_activity_sets_key_and_sorted_set(fake_rq):
     await fake_rq.track_activity(_TELEFONE)
@@ -120,9 +124,12 @@ async def test_scan_timeouts_empty_when_none_expired(fake_rq):
 # on_conversation_timeout handler
 # ─────────────────────────────────────────────────────────────
 
+
 async def test_timeout_mid_flow_posts_falha_and_clears(fake_rq, mock_django):
     # Simulate mid-flow state
-    await fake_rq.set_state(_TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}")
+    await fake_rq.set_state(
+        _TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}"
+    )
     await fake_rq.store_agendamento(_TELEFONE, _AGENDAMENTO)
     await fake_rq.track_activity(_TELEFONE)
 
@@ -187,6 +194,7 @@ async def test_timeout_all_states_trigger_falha(fake_rq, mock_django):
 # Integration: valid responses reset timeout
 # ─────────────────────────────────────────────────────────────
 
+
 async def test_confirmar_sets_activity_tracking(fake_rq):
     await fake_rq.store_agendamento(_TELEFONE, _AGENDAMENTO)
     await fake_rq.set_state(_TELEFONE, STATE_INICIAL)
@@ -221,9 +229,13 @@ async def test_ja_entregue_sets_activity_tracking(fake_rq):
     assert val is not None
 
 
-async def test_periodo_confirmation_clears_activity(fake_rq, mock_django, mock_evolution):
+async def test_periodo_confirmation_clears_activity(
+    fake_rq, mock_django, mock_evolution
+):
     await fake_rq.store_agendamento(_TELEFONE, _AGENDAMENTO)
-    await fake_rq.set_state(_TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}")
+    await fake_rq.set_state(
+        _TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}"
+    )
     await fake_rq.track_activity(_TELEFONE)
 
     await on_response.handle(_event("evt-p1", "1"))
@@ -235,7 +247,10 @@ async def test_periodo_confirmation_clears_activity(fake_rq, mock_django, mock_e
 
 async def test_remarcado_confirmation_clears_activity(fake_rq):
     await fake_rq.store_agendamento(_TELEFONE, _AGENDAMENTO)
-    await fake_rq.set_state(_TELEFONE, f"{STATE_AGUARDANDO_PERIODO_REMARCAR}{_json.dumps({'data': '2026-05-20'})}")
+    await fake_rq.set_state(
+        _TELEFONE,
+        f"{STATE_AGUARDANDO_PERIODO_REMARCAR}{_json.dumps({'data': '2026-05-20'})}",
+    )
     await fake_rq.track_activity(_TELEFONE)
 
     await on_response.handle(_event("evt-pr1", "2"))

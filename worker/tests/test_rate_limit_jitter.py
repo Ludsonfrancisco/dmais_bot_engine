@@ -31,7 +31,9 @@ class FakeRedisEvalClient:
     async def eval(self, *args):
         self.calls.append(args)
         if not self.results:
-            raise AssertionError("FakeRedisEvalClient received more eval calls than expected")
+            raise AssertionError(
+                "FakeRedisEvalClient received more eval calls than expected"
+            )
         return self.results.pop(0)
 
 
@@ -44,8 +46,12 @@ async def test_acquire_allows_configured_capacity_without_sleep():
     client = EvolutionClient()
     fake_redis = FakeRedisEvalClient([1] * settings.MAX_MESSAGES_PER_MINUTE)
 
-    with patch("worker.evolution_client.redis_queue") as mock_rq, \
-         patch("worker.evolution_client.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+    with (
+        patch("worker.evolution_client.redis_queue") as mock_rq,
+        patch(
+            "worker.evolution_client.asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep,
+    ):
         mock_rq._ensure_client.return_value = fake_redis
 
         for _ in range(settings.MAX_MESSAGES_PER_MINUTE):
@@ -60,8 +66,12 @@ async def test_acquire_waits_when_bucket_is_empty_then_retries():
     client = EvolutionClient()
     fake_redis = FakeRedisEvalClient(["15.0", 1])
 
-    with patch("worker.evolution_client.redis_queue") as mock_rq, \
-         patch("worker.evolution_client.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+    with (
+        patch("worker.evolution_client.redis_queue") as mock_rq,
+        patch(
+            "worker.evolution_client.asyncio.sleep", new_callable=AsyncMock
+        ) as mock_sleep,
+    ):
         mock_rq._ensure_client.return_value = fake_redis
 
         await client.acquire()
@@ -139,13 +149,18 @@ async def test_dispatched_message_uses_random_jitter_sleep():
         if len(sleep_calls) >= 2:
             raise _BreakLoop()
 
-    with patch("worker.main.django_client") as mock_django, \
-         patch("worker.main.enviar_inicial.handle", new_callable=AsyncMock) as mock_handle, \
-         patch("worker.main.redis_queue.scan_timeouts", new_callable=AsyncMock) as mock_scan, \
-         patch("worker.main.circuit_breaker.is_open", new_callable=AsyncMock) as mock_cb, \
-         patch("worker.main.random.uniform") as mock_uniform, \
-         patch("worker.main.asyncio.sleep", side_effect=fake_sleep):
-
+    with (
+        patch("worker.main.django_client") as mock_django,
+        patch(
+            "worker.main.enviar_inicial.handle", new_callable=AsyncMock
+        ) as mock_handle,
+        patch(
+            "worker.main.redis_queue.scan_timeouts", new_callable=AsyncMock
+        ) as mock_scan,
+        patch("worker.main.circuit_breaker.is_open", new_callable=AsyncMock) as mock_cb,
+        patch("worker.main.random.uniform") as mock_uniform,
+        patch("worker.main.asyncio.sleep", side_effect=fake_sleep),
+    ):
         mock_django.listar_pendentes = fake_listar_pendentes
         mock_handle.return_value = "OK"
         mock_scan.return_value = []
@@ -185,11 +200,14 @@ async def test_skipped_message_does_not_use_dispatch_jitter_sleep():
         sleep_calls.append(duration)
         raise _BreakLoop()
 
-    with patch("worker.main.django_client") as mock_django, \
-         patch("worker.main.enviar_inicial.handle", new_callable=AsyncMock) as mock_handle, \
-         patch("worker.main.random.uniform") as mock_uniform, \
-         patch("worker.main.asyncio.sleep", side_effect=fake_sleep):
-
+    with (
+        patch("worker.main.django_client") as mock_django,
+        patch(
+            "worker.main.enviar_inicial.handle", new_callable=AsyncMock
+        ) as mock_handle,
+        patch("worker.main.random.uniform") as mock_uniform,
+        patch("worker.main.asyncio.sleep", side_effect=fake_sleep),
+    ):
         mock_django.listar_pendentes = fake_listar_pendentes
         mock_handle.return_value = "SKIP"
         mock_uniform.return_value = 0.0
@@ -233,10 +251,11 @@ async def test_polling_interval_sleep_uses_plus_minus_twenty_percent_jitter():
         sleep_calls.append(duration)
         raise _BreakLoop()
 
-    with patch("worker.main.django_client") as mock_django, \
-         patch("worker.main.random.uniform") as mock_uniform, \
-         patch("worker.main.asyncio.sleep", side_effect=fake_sleep):
-
+    with (
+        patch("worker.main.django_client") as mock_django,
+        patch("worker.main.random.uniform") as mock_uniform,
+        patch("worker.main.asyncio.sleep", side_effect=fake_sleep),
+    ):
         mock_django.listar_pendentes = fake_listar_pendentes
         mock_uniform.return_value = expected_jitter
 
@@ -261,11 +280,12 @@ async def test_polling_interval_sleep_has_minimum_floor():
         sleep_calls.append(duration)
         raise _BreakLoop()
 
-    with patch("worker.main.django_client") as mock_django, \
-         patch("worker.main.settings") as mock_settings, \
-         patch("worker.main.random.uniform") as mock_uniform, \
-         patch("worker.main.asyncio.sleep", side_effect=fake_sleep):
-
+    with (
+        patch("worker.main.django_client") as mock_django,
+        patch("worker.main.settings") as mock_settings,
+        patch("worker.main.random.uniform") as mock_uniform,
+        patch("worker.main.asyncio.sleep", side_effect=fake_sleep),
+    ):
         mock_django.listar_pendentes = fake_listar_pendentes
         mock_settings.POLLING_INTERVAL_SECONDS = 0.5
         mock_uniform.return_value = -0.1

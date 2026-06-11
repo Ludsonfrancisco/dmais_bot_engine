@@ -18,7 +18,9 @@ async def send_report_text(text: str, config: Settings = settings) -> list[dict]
 
     for destination in get_report_destinations(config):
         body = _text_for_destination(text, is_test=destination.is_test)
-        response = await evolution_client.send_group_text_message(destination.group_jid, body)
+        response = await evolution_client.send_group_text_message(
+            destination.group_jid, body
+        )
         results.append(
             {
                 "target": destination.name,

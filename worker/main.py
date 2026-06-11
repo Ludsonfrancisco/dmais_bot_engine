@@ -10,7 +10,12 @@ from pydantic import BaseModel
 from worker.api_client import django_client
 from worker.circuit_breaker import circuit_breaker
 from worker.evolution_client import CircuitOpenError, evolution_client
-from worker.handlers import enviar_inicial, on_conversation_timeout, on_response, on_timeout
+from worker.handlers import (
+    enviar_inicial,
+    on_conversation_timeout,
+    on_response,
+    on_timeout,
+)
 from worker.handlers.on_response import cleanup_chat_locks
 from worker.logs import configure_logging, get_logger, new_correlation_id
 from worker.redis_queue import redis_queue
@@ -29,6 +34,7 @@ _CIRCUIT_OPEN_RETRY_SECONDS = 30
 # Adapter Django → shape esperado pelo worker
 # ---------------------------------------------------------------------------
 
+
 def _adapt(raw: dict) -> dict:
     """Converte agendamento do Django (cliente_*, data_agendada, id-UUID) para o shape
     que enviar_inicial / on_response esperam.
@@ -46,18 +52,19 @@ def _adapt(raw: dict) -> dict:
         pass
 
     return {
-        "agendamento_id": raw.get("id"),                  # UUID string
-        "nome":           raw.get("cliente_nome", ""),
-        "telefone":       raw.get("cliente_telefone", "").lstrip("+"),
-        "data":           data_str,
-        "hora":           raw.get("janela_horario", "MANHA"),
-        "status":         raw.get("status"),
+        "agendamento_id": raw.get("id"),  # UUID string
+        "nome": raw.get("cliente_nome", ""),
+        "telefone": raw.get("cliente_telefone", "").lstrip("+"),
+        "data": data_str,
+        "hora": raw.get("janela_horario", "MANHA"),
+        "status": raw.get("status"),
     }
 
 
 # ---------------------------------------------------------------------------
 # Polling loop
 # ---------------------------------------------------------------------------
+
 
 async def _poll_loop() -> None:
     """Ciclo permanente: nunca deve morrer — todas as exceções são capturadas."""
@@ -159,6 +166,7 @@ async def _poll_loop() -> None:
 # Lifespan
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(_poll_loop(), name="poller")
@@ -188,6 +196,7 @@ app = FastAPI(title="dmais_bot_engine", lifespan=lifespan)
 # POST /webhook/evolution
 # ---------------------------------------------------------------------------
 
+
 @app.post("/webhook/evolution", status_code=200)
 async def webhook_evolution(request: Request):
     event = await request.json()
@@ -198,6 +207,7 @@ async def webhook_evolution(request: Request):
 # ---------------------------------------------------------------------------
 # GET /health  (PRD §9 + 10.C.24)
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health")
 async def health():
@@ -228,6 +238,7 @@ async def health():
 # POST /debug/test-send  (PRD §9 + 10.C.25)
 # ---------------------------------------------------------------------------
 
+
 class _TestSendBody(BaseModel):
     telefone: str
     nome: str
@@ -239,6 +250,7 @@ class _TestSendBody(BaseModel):
 async def debug_test_send(body: _TestSendBody):
     # agendamento_id sintético único por chamada (evita bloqueio do `was_sent` no Redis)
     import time as _time
+
     agendamento = {
         "agendamento_id": int(_time.time() * 1000),
         "nome": body.nome,
@@ -254,6 +266,7 @@ async def debug_test_send(body: _TestSendBody):
 # ---------------------------------------------------------------------------
 # POST /reports/debug-send-text  (Sprint Report Automation)
 # ---------------------------------------------------------------------------
+
 
 class _ReportDebugTextBody(BaseModel):
     text: str = "Teste de envio do dmais_bot_engine para o grupo de homologação."

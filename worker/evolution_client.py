@@ -23,6 +23,7 @@ class CircuitOpenError(Exception):
 
     pass
 
+
 _BUCKET_KEY = "ratelimit:bucket"
 _LAST_REFILL_KEY = "ratelimit:last_refill"
 
@@ -56,7 +57,15 @@ def _is_retryable(exc: BaseException) -> bool:
         return False
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code >= 500
-    return isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.ReadError, httpx.RemoteProtocolError))
+    return isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.TimeoutException,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+        ),
+    )
 
 
 def _log_retry(retry_state: RetryCallState) -> None:
@@ -153,13 +162,19 @@ class EvolutionClient:
         payload is a group JID such as `120363000000000000@g.us`. Do not call
         check_exists() for groups; that endpoint is for individual numbers.
         """
-        return await self._send_text_with_circuit(group_jid, text, log_field="group_jid")
+        return await self._send_text_with_circuit(
+            group_jid, text, log_field="group_jid"
+        )
 
-    async def _send_text_with_circuit(self, number_or_jid: str, text: str, log_field: str) -> dict:
+    async def _send_text_with_circuit(
+        self, number_or_jid: str, text: str, log_field: str
+    ) -> dict:
         if not await circuit_breaker.before_call("sendText"):
             raise CircuitOpenError("circuit breaker is OPEN, skipping send_text")
         try:
-            result = await self._send_text_message(number_or_jid, text, log_field=log_field)
+            result = await self._send_text_message(
+                number_or_jid, text, log_field=log_field
+            )
             circuit_breaker.record_success("sendText")
             return result
         except Exception:
@@ -167,11 +182,15 @@ class EvolutionClient:
             raise
 
     @_retry
-    async def _send_text_message(self, number_or_jid: str, text: str, log_field: str = "telefone") -> dict:
+    async def _send_text_message(
+        self, number_or_jid: str, text: str, log_field: str = "telefone"
+    ) -> dict:
         await self.acquire()
         url = f"{settings.EVOLUTION_API_URL}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
         logger.info("evolution.send_text", **{log_field: number_or_jid})
-        r = await self._ensure_client().post(url, json={"number": number_or_jid, "text": text})
+        r = await self._ensure_client().post(
+            url, json={"number": number_or_jid, "text": text}
+        )
         r.raise_for_status()
         logger.debug("evolution.send_text.ok", status=r.status_code)
         return r.json()
@@ -185,7 +204,9 @@ class EvolutionClient:
             data = r.json()
             return bool(data and data[0].get("exists"))
         except Exception as exc:
-            logger.warning("evolution.check_exists_failed", telefone=telefone, error=str(exc))
+            logger.warning(
+                "evolution.check_exists_failed", telefone=telefone, error=str(exc)
+            )
             return True  # em caso de falha, tenta enviar (fail-open)
 
 
