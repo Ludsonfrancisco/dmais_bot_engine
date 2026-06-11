@@ -49,22 +49,22 @@ def format_cycle_report(
 
     group_lines = _format_group_section(group_counts, group_deltas, has_previous)
     radar_lines = _format_city_radar(city_deltas, has_previous)
-    footer_parts = [f"🕐 Entrante {entrante}"]
+    footer_parts = [f"⏱️ Último entrante: {entrante}"]
     if download:
-        footer_parts.append(f"Base {download}")
-    footer = "  ·  ".join(footer_parts)
+        footer_parts.append(f"Base: {download}")
+    footer = " | ".join(footer_parts)
 
     parts = [
-        f"📊 *GIRO DA OPERAÇÃO*",
-        f"_{window}_",
+        f"📊 *GIRO DA OPERAÇÃO | Atualização das {window}*",
         "",
+        f"📈 *VARIAÇÃO (ÚLTIMAS 2 HORAS):*",
         group_lines,
     ]
     if radar_lines:
         parts.append("")
         parts.append(radar_lines)
     parts.append("")
-    parts.append(f"_{footer}_")
+    parts.append(footer)
     return "\n".join(parts)
 
 
@@ -87,11 +87,11 @@ def _format_group_section(counts: dict, deltas: dict, has_previous: bool) -> str
         delta = deltas.get(key, 0) if has_previous else 0
 
         if has_previous and delta > 0:
-            lines.append(f"    {label}  {total}  ↑{delta}")
+            lines.append(f"   {label}:  {total}  (↑{delta})")
         elif has_previous and delta < 0:
-            lines.append(f"    {label}  {total}  ↓{abs(delta)}")
+            lines.append(f"   {label}:  {total}  (↓{abs(delta)})")
         else:
-            lines.append(f"    {label}  {total}  —")
+            lines.append(f"   {label}:  {total}  —")
 
     return "\n".join(lines)
 
@@ -100,61 +100,61 @@ def _format_city_radar(city_deltas: dict, has_previous: bool) -> str:
     if not has_previous or not city_deltas:
         return ""
 
-    priority_groups = {"REPARO": 2, "ATIVACAO": 2}
-    skip_groups = {"ME", "SERVICOS", "SERVIÇOS", "CANCELAMENTO", "Cancelamento Desc. CAB.", "Moni. CCRI"}
-    improvements = []
-    ativacao_ritmo = []  # Ativação caindo = executando bem
-    warnings_list = []
-    sales_list = []
+    radar_groups = {"REPARO", "ATIVACAO", "CANCELAMENTO"}
+    skip_groups = {"ME", "SERVICOS", "SERVIÇOS", "Cancelamento Desc. CAB.", "Moni. CCRI"}
+
+    improvements = []   # delta < 0 (qualquer grupo)
+    sales_list = []     # delta > 0, ATIVACAO
+    warnings_list = []  # delta > 0, outros
 
     for cidade, groups in city_deltas.items():
         for grupo, delta in groups.items():
             if grupo in skip_groups:
                 continue
-            weight = priority_groups.get(grupo, 1)
-            if delta < 0 and grupo == "ATIVACAO":
-                ativacao_ritmo.append((abs(delta) * weight, cidade, delta))
-            elif delta < 0:
-                improvements.append((abs(delta) * weight, cidade, grupo, delta))
+            if grupo not in radar_groups:
+                continue
+            if delta < 0:
+                improvements.append((abs(delta), cidade, grupo, delta))
             elif delta > 0 and grupo == "ATIVACAO":
-                sales_list.append((abs(delta) * weight, cidade, delta))
+                sales_list.append((abs(delta), cidade, delta))
             elif delta > 0:
-                warnings_list.append((abs(delta) * weight, cidade, grupo, delta))
+                warnings_list.append((abs(delta), cidade, grupo, delta))
 
     improvements.sort(key=lambda x: -x[0])
-    ativacao_ritmo.sort(key=lambda x: -x[0])
     warnings_list.sort(key=lambda x: -x[0])
     sales_list.sort(key=lambda x: -x[0])
 
-    lines = []
+    lines = [f"📍 *RADAR DE CIDADES (ÚLTIMAS 2 HORAS):*"]
 
     if improvements:
-        _, cidade, grupo, delta = improvements[0]
-        gname = _group_name(grupo)
-        lines.append(f"✅ {cidade}: {abs(delta)} {gname} a menos")
-
-    if ativacao_ritmo:
-        _, cidade, delta = ativacao_ritmo[0]
-        lines.append(f"⚡ {cidade}: -{abs(delta)} instalações, no caminho certo ✅")
+        lines.append("")
+        lines.append("✅ *Destaques (Redução de Fila):*")
+        for _, cidade, grupo, delta in improvements:
+            gname = _radar_group_name(grupo, delta)
+            lines.append(f"▪️ {cidade}: {delta} {gname}")
 
     if sales_list:
-        _, cidade, delta = sales_list[0]
-        lines.append(f"🙌 {cidade} vendeu +{delta} instalações ⚠️")
+        lines.append("")
+        lines.append("🙌⚠️ *Novas Vendas (Atenção à Fila):*")
+        for _, cidade, delta in sales_list:
+            lines.append(f"▪️ {cidade}: +{delta} Instalação (Bora ativar!)")
 
     if warnings_list:
-        _, cidade, grupo, delta = warnings_list[0]
-        gname = _group_name(grupo)
-        lines.append(f"⚠️ {cidade}: +{delta} {gname}")
+        lines.append("")
+        lines.append("🚨 *Pontos de Risco (Aumento de Fila):*")
+        for _, cidade, grupo, delta in warnings_list:
+            gname = _radar_group_name(grupo, delta)
+            lines.append(f"▪️ {cidade}: +{delta} {gname}")
 
     return "\n".join(lines)
 
 
-def _group_name(key: str) -> str:
-    mapping = {
-        "REPARO": "Reparos",
-        "ATIVACAO": "Ativações",
-        "ME": "ME",
-        "SERVICOS": "Serviços",
-        "SERVIÇOS": "Serviços",
-    }
-    return mapping.get(key, key)
+def _radar_group_name(grupo: str, delta: int) -> str:
+    """Nome do grupo no radar, sensível ao contexto (positivo/negativo)."""
+    if grupo == "CANCELAMENTO":
+        return "Cancelamentos"
+    if grupo == "ATIVACAO":
+        return "Instalação pendente" if delta < 0 else "Instalação"
+    if grupo == "REPARO":
+        return "Reparos" if delta < 0 else "Reparos pendentes"
+    return grupo
