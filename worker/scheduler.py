@@ -185,7 +185,7 @@ async def run_scheduler() -> None:
             # Cycle times: 06:10, 08:10, ..., 20:10
             cycle_hour = now.hour
             cycle_minute = now.minute
-            cycle_key = f"{today}:{cycle_hour:02d}:{cycle_minute:02d}"
+            cycle_key = f"{today}:{cycle_hour:02d}"
 
             is_cycle_time = (
                 _FIRST_CYCLE_HOUR <= cycle_hour <= _LAST_CYCLE_HOUR
