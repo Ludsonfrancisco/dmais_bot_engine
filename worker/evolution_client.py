@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import time
 
 import httpx
@@ -165,6 +166,50 @@ class EvolutionClient:
         return await self._send_text_with_circuit(
             group_jid, text, log_field="group_jid"
         )
+
+    async def send_group_image_message(
+        self, group_jid: str, image_bytes: bytes, caption: str = ""
+    ) -> dict:
+        """Send an image to a WhatsApp group via EvolutionAPI sendMedia.
+
+        Uses the same endpoint as individual media send but with a group JID.
+        Images are base64-encoded in the payload.
+        """
+        if not await circuit_breaker.before_call("sendMedia"):
+            raise CircuitOpenError("circuit breaker is OPEN, skipping send_media")
+        try:
+            result = await self._send_image_message(group_jid, image_bytes, caption)
+            circuit_breaker.record_success("sendMedia")
+            return result
+        except Exception:
+            await circuit_breaker.record_failure("sendMedia")
+            raise
+
+    @_retry
+    async def _send_image_message(
+        self, number_or_jid: str, image_bytes: bytes, caption: str
+    ) -> dict:
+        await self.acquire()
+        url = (
+            f"{settings.EVOLUTION_API_URL}/message/sendMedia/"
+            f"{settings.EVOLUTION_INSTANCE_NAME}"
+        )
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        payload = {
+            "number": number_or_jid,
+            "mediatype": "image",
+            "media": b64,
+            "caption": caption,
+        }
+        logger.info(
+            "evolution.send_image",
+            group_jid=number_or_jid,
+            size_bytes=len(image_bytes),
+        )
+        r = await self._ensure_client().post(url, json=payload)
+        r.raise_for_status()
+        logger.debug("evolution.send_image.ok", status=r.status_code)
+        return r.json()
 
     async def _send_text_with_circuit(
         self, number_or_jid: str, text: str, log_field: str

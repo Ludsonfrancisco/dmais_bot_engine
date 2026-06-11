@@ -30,3 +30,27 @@ async def send_report_text(text: str, config: Settings = settings) -> list[dict]
         )
 
     return results
+
+
+async def send_report_screenshot(
+    image_bytes: bytes,
+    caption: str = "",
+    config: Settings = settings,
+) -> list[dict]:
+    """Send a report screenshot to the configured WhatsApp report destinations."""
+    results: list[dict] = []
+
+    for destination in get_report_destinations(config):
+        cap = _text_for_destination(caption, is_test=destination.is_test)
+        response = await evolution_client.send_group_image_message(
+            destination.group_jid, image_bytes, caption=cap
+        )
+        results.append(
+            {
+                "target": destination.name,
+                "group_jid": mask_group_jid(destination.group_jid),
+                "response": response,
+            }
+        )
+
+    return results

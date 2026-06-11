@@ -21,7 +21,7 @@ from worker.handlers.on_response import cleanup_chat_locks
 from worker.logs import configure_logging, get_logger, new_correlation_id
 from worker.redis_queue import redis_queue
 from worker.reports.screenshots import capture_portal_page
-from worker.reports.sender import send_report_text
+from worker.reports.sender import send_report_screenshot, send_report_text
 from worker.settings import settings
 
 configure_logging(settings.LOG_LEVEL)
@@ -287,14 +287,63 @@ async def debug_send_report_text(body: _ReportDebugTextBody):
 
 class _ReportDebugScreenshotBody(BaseModel):
     path: str = "/backlog/"
+    viewport_width: int = 1280
+    viewport_height: int = 720
+    element_selector: str | None = None
+    select_value: str | None = None
+    row_dim: str | None = None
+    col_dim: str | None = None
+    font_scale: float = 1.0
+    light_mode: bool = False
 
 
 @app.post("/reports/debug-screenshot")
 async def debug_screenshot(body: _ReportDebugScreenshotBody):
-    screenshot_bytes = await capture_portal_page(body.path)
+    screenshot_bytes = await capture_portal_page(
+        body.path,
+        viewport_width=body.viewport_width,
+        viewport_height=body.viewport_height,
+        element_selector=body.element_selector,
+        select_value=body.select_value,
+        row_dim=body.row_dim,
+        col_dim=body.col_dim,
+        font_scale=body.font_scale,
+        light_mode=body.light_mode,
+    )
     return {
         "status": "ok",
         "path": body.path,
         "size_bytes": len(screenshot_bytes),
         "image_base64": base64.b64encode(screenshot_bytes).decode("ascii"),
     }
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-send-screenshot  (Sprint 3)
+# ---------------------------------------------------------------------------
+
+
+class _ReportDebugSendScreenshotBody(BaseModel):
+    path: str = "/backlog/"
+    caption: str = ""
+    viewport_width: int = 1280
+    viewport_height: int = 720
+    element_selector: str | None = None
+    row_dim: str | None = None
+    col_dim: str | None = None
+    light_mode: bool = False
+
+
+@app.post("/reports/debug-send-screenshot")
+async def debug_send_screenshot(body: _ReportDebugSendScreenshotBody):
+    screenshot_bytes = await capture_portal_page(
+        body.path,
+        viewport_width=body.viewport_width,
+        viewport_height=body.viewport_height,
+        element_selector=body.element_selector,
+        row_dim=body.row_dim,
+        col_dim=body.col_dim,
+        light_mode=body.light_mode,
+    )
+    results = await send_report_screenshot(screenshot_bytes, caption=body.caption)
+    return {"status": "ok", "sent": results}
