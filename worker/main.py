@@ -23,6 +23,13 @@ from worker.redis_queue import redis_queue
 from worker.reports.screenshots import capture_portal_page
 from worker.reports.sender import send_report_screenshot, send_report_text
 from worker.settings import settings
+from worker.reports.formatter import format_cycle_report, format_morning_message
+from worker.reports.stats import get_deltas, save_snapshot
+from worker.reports.data import (
+    fetch_city_group_counts,
+    fetch_group_counts,
+    fetch_status_header,
+)
 
 configure_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
@@ -347,3 +354,130 @@ async def debug_send_screenshot(body: _ReportDebugSendScreenshotBody):
     )
     results = await send_report_screenshot(screenshot_bytes, caption=body.caption)
     return {"status": "ok", "sent": results}
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-morning  (Sprint 4 — Mensagem da manhã)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/reports/debug-morning")
+async def debug_morning():
+    from worker.evolution_client import evolution_client
+    from worker.reports.destinations import get_report_destinations
+
+    text = format_morning_message()
+    results = []
+    for dest in get_report_destinations():
+        resp = await evolution_client.send_group_text_message(dest.group_jid, text)
+        results.append({"target": dest.name, "response": resp})
+    return {"status": "ok", "sent": results}
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-cycle  (Sprint 4 — Ciclo completo)
+# ---------------------------------------------------------------------------
+
+
+class _DebugCycleBody(BaseModel):
+    hour: str = "06:10"
+
+
+@app.post("/reports/debug-cycle")
+async def debug_cycle(body: _DebugCycleBody):
+
+    # Launch a single browser session for everything
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        ctx = await browser.new_context(viewport={"width": 1920, "height": 720})
+        page = await ctx.new_page()
+
+        # Login
+        await page.goto(f"{settings.DMAIS_PORTAL_URL}/login/", wait_until="networkidle")
+        await page.fill('input[type="email"]', settings.DMAIS_PORTAL_EMAIL)
+        await page.fill('input[type="password"]', settings.DMAIS_PORTAL_PASSWORD)
+        await page.click('button[type="submit"]')
+        await page.wait_for_url(lambda u: "/login" not in u, timeout=15000)
+
+        # Fetch portal data
+        status = await fetch_status_header(page)
+        group_counts = await fetch_group_counts(page)
+        city_counts = await fetch_city_group_counts(page)
+
+        # Calculate deltas
+        deltas = await get_deltas(group_counts, city_counts)
+
+        # Save current snapshot for next cycle
+        await save_snapshot(group_counts, city_counts)
+
+        await browser.close()
+
+    # Format report
+    entrante = status.get("ultima_atualizacao_abertura", "--:--")
+    download = status.get("ultimo_download", "--:--")
+    text = format_cycle_report(
+        body.hour,
+        entrante,
+        download,
+        group_counts,
+        deltas["groups"],
+        deltas["cities"],
+        deltas["has_previous"],
+    )
+
+    # Send 3 prints first, then text report
+    prints = [
+        {
+            "path": "/backlog/",
+            "vw": 1920,
+            "vh": 1170,
+            "el": "#matrix-inner",
+            "row": "cidade",
+            "col": "grupo",
+            "cap": "*BACKLOG DMAIS (Todas as Cidades)*",
+        },
+        {
+            "path": "/backlog/",
+            "vw": 1920,
+            "vh": 720,
+            "el": "#matrix-inner",
+            "row": "cidade_grupo",
+            "col": None,
+            "cap": "*BACKLOG DMAIS (Área Dmais)*",
+        },
+        {
+            "path": "/backlog/",
+            "vw": 1920,
+            "vh": 720,
+            "el": "#abortados-inner",
+            "row": None,
+            "col": None,
+            "cap": "*REPAROS ABORTADOS*",
+            "light": True,
+        },
+    ]
+
+    for prt in prints:
+        img = await capture_portal_page(
+            prt["path"],
+            viewport_width=prt["vw"],
+            viewport_height=prt["vh"],
+            element_selector=prt["el"],
+            row_dim=prt.get("row"),
+            col_dim=prt.get("col"),
+            light_mode=prt.get("light", False),
+        )
+        await send_report_screenshot(img, caption=prt["cap"])
+
+    # Send text report after prints (without test prefix)
+    from worker.evolution_client import evolution_client
+    from worker.reports.destinations import get_report_destinations
+
+    results = []
+    for dest in get_report_destinations():
+        resp = await evolution_client.send_group_text_message(dest.group_jid, text)
+        results.append({"target": dest.name, "response": resp})
+
+    return {"status": "ok", "report_sent": results, "prints_sent": len(prints)}
