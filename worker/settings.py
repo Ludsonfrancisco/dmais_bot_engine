@@ -26,8 +26,12 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
 
     # Polling
+    POLLING_ENABLED: bool = True
     POLLING_INTERVAL_SECONDS: int = 60
     MAX_MESSAGES_PER_MINUTE: int = 4
+
+    # Webhook (respostas de clientes — coleta de equipamento)
+    WEBHOOK_ENABLED: bool = True
 
     # Conversation timeout (seconds of inactivity before auto-FALHA)
     CONVERSATION_TIMEOUT_SECONDS: int = 14400  # 4 hours

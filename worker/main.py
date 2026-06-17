@@ -1,7 +1,7 @@
 import asyncio
 import base64
 import random
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import date, timedelta
 
 import httpx
@@ -179,26 +179,30 @@ async def _poll_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(_poll_loop(), name="poller")
+    task = None
+    if settings.POLLING_ENABLED:
+        task = asyncio.create_task(_poll_loop(), name="poller")
+    else:
+        logger.info("poller.disabled")
+
     sched_task = asyncio.create_task(run_scheduler(), name="scheduler")
     logger.info(
         "worker.started",
+        polling_enabled=settings.POLLING_ENABLED,
         polling_interval=settings.POLLING_INTERVAL_SECONDS,
         scheduler_tz=settings.REPORT_TIMEZONE,
     )
     try:
         yield
     finally:
-        task.cancel()
+        if task is not None:
+            task.cancel()
         sched_task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
-        try:
+        if task is not None:
+            with suppress(asyncio.CancelledError):
+                await task
+        with suppress(asyncio.CancelledError):
             await sched_task
-        except asyncio.CancelledError:
-            pass
         await django_client.aclose()
         await evolution_client.aclose()
         await redis_queue.aclose()
@@ -219,6 +223,8 @@ app = FastAPI(title="dmais_bot_engine", lifespan=lifespan)
 
 @app.post("/webhook/evolution", status_code=200)
 async def webhook_evolution(request: Request):
+    if not settings.WEBHOOK_ENABLED:
+        return {"status": "ok", "skipped": "webhook_disabled"}
     event = await request.json()
     await on_response.handle(event)
     return {"status": "ok"}
