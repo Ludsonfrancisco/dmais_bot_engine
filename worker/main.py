@@ -461,7 +461,7 @@ async def debug_cycle(body: _DebugCycleBody):
             "vh": 720,
             "el": "#matrix-inner",
             "row": "cidade_grupo",
-            "col": None,
+            "col": "grupo",
             "cap": "*BACKLOG DMAIS (Área Dmais)*",
         },
         {

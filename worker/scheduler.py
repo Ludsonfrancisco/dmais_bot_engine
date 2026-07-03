@@ -55,7 +55,7 @@ _PRINTS = [
         "vh": 720,
         "el": "#matrix-inner",
         "row": "cidade_grupo",
-        "col": None,
+        "col": "grupo",
         "cap": "*BACKLOG DMAIS (Área Dmais)*",
     },
     {
