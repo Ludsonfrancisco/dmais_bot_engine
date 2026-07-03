@@ -144,6 +144,12 @@ async def capture_portal_page(
                         "screenshot.select_failed", value=select_value, error=str(exc)
                     )
 
+            # --- Always hide row-total-badge (may be buggy in some portal versions) ---
+            await page.add_style_tag(
+                content=".row-total-badge{display:none!important}"
+            )
+            await page.wait_for_timeout(200)
+
             # --- Optional: scale up fonts for readability ---
             if font_scale != 1.0:
                 logger.info("screenshot.font_scale", scale=font_scale)
