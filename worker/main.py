@@ -30,7 +30,7 @@ from worker.reports.data import (
     fetch_group_counts,
     fetch_status_header,
 )
-from worker.scheduler import run_scheduler
+from worker.scheduler import _PRINTS, run_scheduler
 
 configure_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
@@ -444,45 +444,13 @@ async def debug_cycle(body: _DebugCycleBody):
         deltas["has_previous"],
     )
 
-    # Send 3 prints first, then text report
-    prints = [
-        {
-            "path": "/backlog/",
-            "vw": 1920,
-            "vh": 1170,
-            "el": "#matrix-inner",
-            "row": "cidade",
-            "col": "grupo",
-            "cap": "*BACKLOG DMAIS (Todas as Cidades)*",
-        },
-        {
-            "path": "/backlog/",
-            "vw": 1920,
-            "vh": 720,
-            "el": "#matrix-inner",
-            "row": "cidade_grupo",
-            "col": "grupo",
-            "cap": "*BACKLOG DMAIS (Área Dmais)*",
-        },
-        {
-            "path": "/backlog/",
-            "vw": 1920,
-            "vh": 720,
-            "el": "#abortados-inner",
-            "row": None,
-            "col": None,
-            "cap": "*REPAROS ABORTADOS*",
-            "light": True,
-        },
-    ]
-
-    # Get destinations once
+    # Send prints using the canonical definition from scheduler (keeps format in sync)
     from worker.evolution_client import evolution_client
     from worker.reports.destinations import get_report_destinations
 
     destinations = get_report_destinations()
 
-    for prt in prints:
+    for prt in _PRINTS:
         img = await capture_portal_page(
             prt["path"],
             viewport_width=prt["vw"],
@@ -490,6 +458,7 @@ async def debug_cycle(body: _DebugCycleBody):
             element_selector=prt["el"],
             row_dim=prt.get("row"),
             col_dim=prt.get("col"),
+            outlier_group=prt.get("outlier_group"),
             light_mode=prt.get("light", False),
         )
         for dest in destinations:
@@ -503,4 +472,4 @@ async def debug_cycle(body: _DebugCycleBody):
         resp = await evolution_client.send_group_text_message(dest.group_jid, text)
         results.append({"target": dest.name, "response": resp})
 
-    return {"status": "ok", "report_sent": results, "prints_sent": len(prints)}
+    return {"status": "ok", "report_sent": results, "prints_sent": len(_PRINTS)}

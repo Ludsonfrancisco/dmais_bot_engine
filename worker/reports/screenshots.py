@@ -21,6 +21,7 @@ async def capture_portal_page(
     select_value: str | None = None,
     row_dim: str | None = None,
     col_dim: str | None = None,
+    outlier_group: str | None = None,
     font_scale: float = 1.0,
     light_mode: bool = False,
 ) -> bytes:
@@ -89,26 +90,54 @@ async def capture_portal_page(
             except Exception:
                 pass
 
-            # --- Apply row/col dimension selects (Backlog pivot) ---
+            # --- Apply row/col dimension selects via JS (bypass CSS visibility) ---
+            # Portal v2 hides these selects with CSS; select_option() fails.
+            # JS value + dispatchEvent('change') triggers HTMX re-render.
             for sel_id, dim_value in [("#row-dim", row_dim), ("#col-dim", col_dim)]:
                 if not dim_value:
                     continue
                 logger.info("screenshot.select_dim", select=sel_id, value=dim_value)
                 try:
-                    sel_el = await page.query_selector(sel_id)
-                    if sel_el is None:
-                        logger.warning("screenshot.select_not_found", select=sel_id)
-                    else:
-                        await sel_el.select_option(value=dim_value)
-                        await page.wait_for_timeout(2500)
-                        logger.info(
-                            "screenshot.dim_selected", select=sel_id, value=dim_value
-                        )
+                    await page.evaluate(
+                        f"""() => {{
+                            const sel = document.querySelector('{sel_id}');
+                            if (sel) {{
+                                sel.value = '{dim_value}';
+                                sel.dispatchEvent(new Event('change', {{bubbles: true}}));
+                            }}
+                        }}"""
+                    )
+                    await page.wait_for_timeout(2500)
+                    logger.info(
+                        "screenshot.dim_selected", select=sel_id, value=dim_value
+                    )
                 except Exception as exc:
                     logger.warning(
                         "screenshot.dim_failed",
                         select=sel_id,
                         value=dim_value,
+                        error=str(exc),
+                    )
+
+            # --- Apply outlier-group select via JS (same hidden-select pattern) ---
+            if outlier_group:
+                logger.info("screenshot.outlier_group", value=outlier_group)
+                try:
+                    await page.evaluate(
+                        f"""() => {{
+                            const sel = document.querySelector('#outlier-group');
+                            if (sel) {{
+                                sel.value = '{outlier_group}';
+                                sel.dispatchEvent(new Event('change', {{bubbles: true}}));
+                            }}
+                        }}"""
+                    )
+                    await page.wait_for_timeout(1500)
+                    logger.info("screenshot.outlier_selected", value=outlier_group)
+                except Exception as exc:
+                    logger.warning(
+                        "screenshot.outlier_failed",
+                        value=outlier_group,
                         error=str(exc),
                     )
 
@@ -158,11 +187,27 @@ async def capture_portal_page(
                 )
                 await page.wait_for_timeout(500)
 
-            # --- Optional: switch to light mode ---
+            # --- Optional: switch to light mode via localStorage + reload ---
             if light_mode:
                 logger.info("screenshot.light_mode")
-                await page.evaluate("document.body.classList.add('theme-light')")
-                await page.wait_for_timeout(1000)
+                await page.evaluate("localStorage.setItem('theme', 'light')")
+                await page.goto(target_url, wait_until="networkidle")
+                await page.wait_for_timeout(2000)
+
+            # --- Hide floating UI elements (Insights FAB, mobile nav, loader) ---
+            await page.evaluate("""() => {
+                const hide_ids = [
+                    'ins-fab-root', 'ins-fab', 'ins-panel', 'painel-insights',
+                    'painel-chat', 'portal-command-dialog', 'portal-mobile-nav',
+                    'mobile-menu', 'mobile-overlay', 'portal-rail', 'portal-pulse',
+                    'portal-page-loader',
+                ];
+                for (const id of hide_ids) {
+                    const el = document.getElementById(id);
+                    if (el) el.style.display = 'none';
+                }
+            }""")
+            await page.wait_for_timeout(300)
 
             # Take screenshot
             if element_selector:

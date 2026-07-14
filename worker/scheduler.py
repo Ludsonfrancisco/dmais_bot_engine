@@ -38,35 +38,30 @@ _CYCLES_TTL = 86400  # 24h
 _sent_morning_today: str | None = None
 _sent_cycles: set[str] = set()
 
-# Print definitions
+# Print definitions — updated for portal v2 (Jul 2026)
 _PRINTS = [
     {
         "path": "/backlog/",
         "vw": 1920,
-        "vh": 1170,
-        "el": "#matrix-inner",
-        "row": "cidade",
-        "col": "grupo",
-        "cap": "*BACKLOG DMAIS (Todas as Cidades)*",
+        "vh": 900,
+        "el": "#backlog-distribution",
+        "cap": "*BACKLOG TERRITORIAL*",
+    },
+    {
+        "path": "/backlog/",
+        "vw": 375,
+        "vh": 3000,
+        "el": "#backlog-concentrations",
+        "outlier_group": "REPARO",
+        "cap": "*LEITURA TERRITORIAL (Mobile — Reparo)*",
     },
     {
         "path": "/backlog/",
         "vw": 1920,
         "vh": 720,
-        "el": "#matrix-inner",
-        "row": "cidade_grupo",
-        "col": "grupo",
-        "cap": "*BACKLOG DMAIS (Área Dmais)*",
-    },
-    {
-        "path": "/backlog/",
-        "vw": 1920,
-        "vh": 720,
-        "el": "#abortados-inner",
-        "row": None,
-        "col": None,
-        "cap": "*REPAROS ABORTADOS*",
+        "el": "#aborted-repairs",
         "light": True,
+        "cap": "*REPAROS ABORTADOS*",
     },
 ]
 
@@ -170,6 +165,7 @@ async def _send_cycle(hour_label: str, ctx_browser) -> None:
             element_selector=prt["el"],
             row_dim=prt.get("row"),
             col_dim=prt.get("col"),
+            outlier_group=prt.get("outlier_group"),
             light_mode=prt.get("light", False),
         )
         for dest in destinations:
