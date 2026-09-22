@@ -16,7 +16,15 @@ logger = get_logger(__name__)
 def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code >= 500
-    return isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.ReadError, httpx.RemoteProtocolError))
+    return isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.TimeoutException,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+        ),
+    )
 
 
 def _log_retry(retry_state: RetryCallState) -> None:
@@ -109,7 +117,11 @@ class DjangoAPIClient:
         )
         r = await self._ensure_client().patch(
             url,
-            json={"status": novo_status, "motivo": motivo, "inc_tentativas": inc_tentativas},
+            json={
+                "status": novo_status,
+                "motivo": motivo,
+                "inc_tentativas": inc_tentativas,
+            },
         )
         r.raise_for_status()
         logger.debug("django.status_patch.ok", status=r.status_code)

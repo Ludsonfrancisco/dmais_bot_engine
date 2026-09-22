@@ -1,7 +1,7 @@
 # =============================================================================
 # dmais_bot_engine — Docker Compose
 # =============================================================================
-# 3 serviços: evolution-api, redis, worker
+# 4 serviços: postgres, evolution-api, redis, worker
 # Uso: docker compose up -d --build
 # =============================================================================
 
@@ -16,7 +16,7 @@ services:
     restart: unless-stopped
     environment:
       - POSTGRES_USER=evolution
-      - POSTGRES_PASSWORD=evolution
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-evolution}
       - POSTGRES_DB=evolution
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -44,7 +44,7 @@ services:
       # Armazenamento (PostgreSQL obrigatório na v2)
       - DATABASE_ENABLED=true
       - DATABASE_PROVIDER=postgresql
-      - DATABASE_CONNECTION_URI=postgresql://evolution:evolution@postgres:5432/evolution?schema=public
+      - DATABASE_CONNECTION_URI=postgresql://evolution:${POSTGRES_PASSWORD:-evolution}@postgres:5432/evolution?schema=public
       # Instância padrão
       - DEL_INSTANCE=false
       # Logs
@@ -73,7 +73,7 @@ services:
     networks:
       - dmais_net
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:8080/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))\""]
       interval: 15s
       timeout: 5s
       retries: 5

@@ -1,5 +1,5 @@
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from worker.logs import get_logger
 
@@ -8,17 +8,25 @@ logger = get_logger(__name__)
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
 OPCOES_INICIAIS = [
-    ("CONFIRMAR",   "Confirmar coleta"),
-    ("REMARCAR",    "Remarcar para outro dia"),
+    ("CONFIRMAR", "Confirmar coleta"),
+    ("REMARCAR", "Remarcar para outro dia"),
     ("JA_ENTREGUE", "Já entreguei"),
 ]
 
-# Datas hardcoded para REMARCAR (sprint atual; depois plugar no /slots Django)
-DATAS_REMARCAR_DEMO: list[str] = [
-    "2026-05-19",
-    "2026-05-20",
-    "2026-05-21",
-]
+
+def _proximos_dias_uteis(n: int = 3, data_base: date | None = None) -> list[str]:
+    """Retorna os próximos *n* dias úteis (seg–sáb, excluindo domingo) a partir
+    de amanhã em relação a *data_base* (default = hoje)."""
+    if data_base is None:
+        data_base = date.today()
+    resultado: list[str] = []
+    candidato = data_base + timedelta(days=1)
+    while len(resultado) < n:
+        if candidato.weekday() != 6:  # 6 = domingo
+            resultado.append(candidato.isoformat())
+        candidato += timedelta(days=1)
+    return resultado
+
 
 # Períodos (alinhado a Agendamento.janela_horario do dmais_portal: MANHA/TARDE/NOITE)
 PERIODOS = [
@@ -38,7 +46,9 @@ MSG_JA_ENTREGUE_PERGUNTA = (
 
 def _reject_url(value: str, field: str) -> None:
     if _URL_RE.search(value):
-        raise ValueError(f"campo '{field}' contém URL — proibido pelas regras de negócio")
+        raise ValueError(
+            f"campo '{field}' contém URL — proibido pelas regras de negócio"
+        )
 
 
 def _format_data_curta(data_str: str) -> str:
@@ -81,7 +91,9 @@ def build_initial_text(agendamento: dict) -> tuple[str, str]:
 
     texto = "\n".join(linhas)
 
-    logger.debug("payload.initial_text.built", agendamento_id=agendamento.get("agendamento_id"))
+    logger.debug(
+        "payload.initial_text.built", agendamento_id=agendamento.get("agendamento_id")
+    )
     return telefone, texto
 
 
@@ -98,15 +110,23 @@ def build_periodo_text(data_str: str) -> str:
     return "\n".join(linhas)
 
 
-def build_datas_remarcar_text() -> tuple[str, dict[str, str]]:
-    """Menu de datas para remarcação (hardcoded). Retorna (texto, mapping idx→ISO date)."""
+def build_datas_remarcar_text(
+    n_dias: int = 3, data_base: date | None = None
+) -> tuple[str, dict[str, str]]:
+    """Menu de datas para remarcação (dinâmico). Retorna (texto, mapping idx→ISO date).
+
+    *data_base* controla a data de referência (default = hoje).  Parâmetros
+    expostos apenas para testabilidade; na chamada normal não é passado nenhum
+    argumento.
+    """
+    datas = _proximos_dias_uteis(n=n_dias, data_base=data_base)
     linhas = [
         "Sem problemas! Escolha uma nova data para a coleta:",
         "",
         "Responda com o número da opção:",
     ]
     mapping: dict[str, str] = {}
-    for idx, data_iso in enumerate(DATAS_REMARCAR_DEMO, start=1):
+    for idx, data_iso in enumerate(datas, start=1):
         linhas.append(f"{idx} — {_format_data_humana(data_iso)}")
         mapping[str(idx)] = data_iso
     return "\n".join(linhas), mapping

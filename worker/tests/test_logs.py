@@ -26,7 +26,12 @@ def test_authorization_top_level_masked():
 
 
 def test_authorization_in_headers_masked():
-    event_dict = {"headers": {"Authorization": "Token secret123", "Content-Type": "application/json"}}
+    event_dict = {
+        "headers": {
+            "Authorization": "Token secret123",
+            "Content-Type": "application/json",
+        }
+    }
     result = _mask_sensitive(None, None, event_dict)
     assert result["headers"]["Authorization"] == "***"
     assert result["headers"]["Content-Type"] == "application/json"

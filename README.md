@@ -1,12 +1,14 @@
 # dmais_bot_engine
 
-> Motor local de disparo de mensagens WhatsApp para confirmação de coletas — Logística Reversa DMais.
+> Motor WhatsApp DMais: originalmente criado para confirmação de coletas da Logística Reversa; fase atual: publicador de relatórios automáticos do dmais_portal em grupos WhatsApp.
 
 ---
 
 ## Visão Geral
 
-O `dmais_bot_engine` é um **motor autocontido**, orquestrado via Docker Compose, responsável por:
+> **Fase atual (Sprint Report Automation):** o `dmais_bot_engine` será estendido para enviar relatórios e prints das páginas **Backlog** e **Prazo de Atendimento** do `dmais_portal` em um **grupo WhatsApp de testes**. O envio para grupo oficial só será habilitado depois de homologação explícita.
+
+O `dmais_bot_engine` é um **motor autocontido**, orquestrado via Docker Compose. O fluxo original de Logística Reversa continua preservado e é responsável por:
 
 1. **Buscar agendamentos pendentes** na API Django (polling periódico, 60s).
 2. **Enviar mensagens WhatsApp** (texto plano com opções numeradas, branding AT3 Internet) via EvolutionAPI (Baileys).
@@ -15,6 +17,16 @@ O `dmais_bot_engine` é um **motor autocontido**, orquestrado via Docker Compose
 5. **Gerenciar filas e idempotência** com Redis (rate-limit 4 msg/min com jitter aleatório, idempotência por event_id, lock por chat).
 
 O motor **não possui banco de dados próprio** — todo estado durável vive na API Django. O Redis serve como memória operacional (filas, duplicidade, rate limiting, **estado da conversa por telefone**).
+
+### Fase Report Automation
+
+Nesta fase, o bot passa a atuar também como **publicador de relatórios WhatsApp** conectado ao `dmais_portal`:
+
+1. Captura prints autenticados das páginas `/backlog/` e `/prazo-atendimento/`.
+2. Monta relatórios textuais a partir da base atual do portal.
+3. Envia primeiro para `WHATSAPP_TEST_GROUP_JID`.
+4. Só libera `WHATSAPP_REPORT_GROUP_JID` depois da homologação.
+5. Agenda envios por cron usando `REPORT_TIMEZONE=America/Sao_Paulo`.
 
 > ⚠️ **Mudança arquitetural (May 2026):** O PRD original especificava WhatsApp List Messages, mas a Meta as deprecou no protocolo Web/Multi-Device. O motor agora usa **texto plano com opções numeradas (1/2/3)** e máquina de estados multi-etapas. Detalhes técnicos completos em [CLAUDE.md](./CLAUDE.md).
 
@@ -77,27 +89,56 @@ Edite o `.env` e preencha os valores reais:
 | `EVOLUTION_API_URL`         | URL interna da EvolutionAPI                   | `http://evolution-api:8080` |
 | `EVOLUTION_API_KEY`         | API key global da EvolutionAPI                | —                           |
 | `EVOLUTION_INSTANCE_NAME`   | Nome da instância/sessão WhatsApp             | `dmais`                     |
+| `POSTGRES_PASSWORD`         | Senha do Postgres interno da EvolutionAPI     | `evolution`                 |
 | `REDIS_URL`                 | URL de conexão Redis                          | `redis://redis:6379/0`      |
 | `POLLING_INTERVAL_SECONDS`  | Intervalo de polling (segundos)               | `60`                        |
 | `MAX_MESSAGES_PER_MINUTE`   | Limite de envios por minuto (anti-bloqueio)   | `4`                         |
 | `LOG_LEVEL`                 | Nível de log (`DEBUG`/`INFO`/`WARNING`/`ERROR`)| `INFO`                     |
 | `WORKER_HTTP_PORT`          | Porta HTTP do worker (FastAPI)                | `8000`                      |
+| `REPORT_TARGETS`            | Destinos: `test`, `production`, `test,production` | `test`                  |
+| `WHATSAPP_TEST_GROUP_JID`   | Grupo WhatsApp de homologação                 | —                           |
+| `WHATSAPP_REPORT_GROUP_JID` | Grupo WhatsApp oficial                        | —                           |
+| `REPORT_TIMEZONE`           | Timezone da agenda/relatórios                 | `America/Sao_Paulo`         |
+| `REPORT_SCHEDULER_ENABLED`  | Liga/desliga os envios no grupo               | `true`                      |
+| `REPORT_MORNING_TIME`       | Horário da mensagem de bom dia                | `06:00`                     |
+| `REPORT_CYCLE_FIRST`        | Primeiro relatório do dia                     | `06:30`                     |
+| `REPORT_CYCLE_LAST`         | Último relatório do dia                       | `20:30`                     |
+| `REPORT_CYCLE_INTERVAL_HOURS` | Intervalo entre relatórios (horas)          | `2`                         |
+| `REPORTS_ENABLED`           | Legado, não lido pelo scheduler               | `false`                     |
+| `DMAIS_PORTAL_URL`          | URL do portal para prints/dados               | `http://localhost:8001`     |
+| `DMAIS_PORTAL_EMAIL`        | Email de login no portal                      | —                           |
+| `DMAIS_PORTAL_PASSWORD`     | Senha de login no portal                      | —                           |
 
-### 3. Subir os serviços
+### 3. Subir e validar a stack
 
 ```bash
 make up
-# ou: docker compose up -d --build
+make ps
+make health
 ```
 
-### 4. Verificar saúde dos containers
+Todos os serviços (`postgres`, `evolution-api`, `redis`, `worker`) devem estar com status `healthy` em até 60 segundos.
+
+### 4. Criar/parear a instância WhatsApp
 
 ```bash
-make ps
-# ou: docker compose ps
+set -a; . ./.env; set +a
+curl -s -X POST "http://localhost:8080/instance/create" \
+  -H "apikey: $EVOLUTION_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"instanceName":"'"$EVOLUTION_INSTANCE_NAME"'","qrcode":true}' | python -m json.tool
+make qrcode
+xdg-open /tmp/dmais_qr.png  # opcional: abre a imagem gerada pelo make qrcode
 ```
 
-Todos os serviços devem estar com status `healthy` em até 60 segundos.
+Escaneie o QR no WhatsApp: Dispositivos conectados → Conectar dispositivo. Depois confirme:
+
+```bash
+curl -s -X GET "http://localhost:8080/instance/connectionState/$EVOLUTION_INSTANCE_NAME" \
+  -H "apikey: $EVOLUTION_API_KEY" | python -m json.tool
+```
+
+O campo `state` deve ser `"open"`.
 
 ---
 
@@ -114,14 +155,12 @@ O pareamento conecta a EvolutionAPI a um número de WhatsApp real via QRCode.
 
 2. **Crie a instância** (apenas na primeira vez):
    ```bash
+   set -a; . ./.env; set +a
    curl -s -X POST \
      "http://localhost:8080/instance/create" \
-     -H "apikey: SUA_API_KEY" \
+     -H "apikey: $EVOLUTION_API_KEY" \
      -H "Content-Type: application/json" \
-     -d '{
-       "instanceName": "dmais",
-       "qrcode": true
-     }' | python -m json.tool
+     -d '{"instanceName":"'"$EVOLUTION_INSTANCE_NAME"'","qrcode":true}' | python -m json.tool
    ```
 
 3. **Obtenha o QRCode** para escanear:
@@ -129,11 +168,10 @@ O pareamento conecta a EvolutionAPI a um número de WhatsApp real via QRCode.
    make qrcode
    # ou:
    curl -s -X GET \
-     "http://localhost:8080/instance/connect/dmais" \
-     -H "apikey: SUA_API_KEY" | python -m json.tool
+     "http://localhost:8080/instance/connect/$EVOLUTION_INSTANCE_NAME" \
+     -H "apikey: $EVOLUTION_API_KEY" | python -m json.tool
    ```
-   - A resposta terá um campo `base64` com a imagem do QR.
-   - Copie o valor base64 e decodifique (ou use o painel web da Evolution se habilitado).
+   - O `make qrcode` salva a imagem em `/tmp/dmais_qr.png`; abra esse arquivo para escanear.
 
 4. **Escaneie o QRCode** com o WhatsApp do número que será usado para enviar as mensagens:
    - Abra o WhatsApp → Dispositivos conectados → Conectar dispositivo → Escaneie o QR.
@@ -141,8 +179,8 @@ O pareamento conecta a EvolutionAPI a um número de WhatsApp real via QRCode.
 5. **Verifique a conexão**:
    ```bash
    curl -s -X GET \
-     "http://localhost:8080/instance/connectionState/dmais" \
-     -H "apikey: SUA_API_KEY" | python -m json.tool
+     "http://localhost:8080/instance/connectionState/$EVOLUTION_INSTANCE_NAME" \
+     -H "apikey: $EVOLUTION_API_KEY" | python -m json.tool
    ```
    - O campo `state` deve ser `"open"`.
 
@@ -176,7 +214,7 @@ O pareamento conecta a EvolutionAPI a um número de WhatsApp real via QRCode.
 dmais_bot_engine/
 ├── .env.example              # Template de variáveis de ambiente
 ├── .gitignore                # Python + Docker + sensíveis
-├── docker-compose.yml        # 3 serviços: evolution-api, redis, worker
+├── docker-compose.yml        # 4 serviços: postgres, evolution-api, redis, worker
 ├── Makefile                  # Atalhos operacionais
 ├── PRD.md                    # Product Requirements Document
 ├── TASKS.md                  # Guia de execução Sprint C (checkboxes)

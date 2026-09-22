@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import time
 
 import httpx
@@ -10,11 +11,19 @@ from tenacity import (
     wait_exponential,
 )
 
+from worker.circuit_breaker import circuit_breaker
 from worker.logs import get_logger
 from worker.redis_queue import redis_queue
 from worker.settings import settings
 
 logger = get_logger(__name__)
+
+
+class CircuitOpenError(Exception):
+    """Raised when the circuit breaker is OPEN and the call is blocked."""
+
+    pass
+
 
 _BUCKET_KEY = "ratelimit:bucket"
 _LAST_REFILL_KEY = "ratelimit:last_refill"
@@ -30,18 +39,34 @@ local elapsed = math.max(0, now - last_refill)
 tokens = math.min(capacity, tokens + elapsed * refill_rate)
 if tokens >= 1 then
     tokens = tokens - 1
-    redis.call('SET', KEYS[1], tokens)
-    redis.call('SET', KEYS[2], now)
+    redis.call('SET', KEYS[1], tokens, 'EX', 86400)
+    redis.call('SET', KEYS[2], now, 'EX', 86400)
     return 1
 end
 return tostring((1 - tokens) / refill_rate)
 """
 
 
+# Exceptions that must never be retried — fail fast instead of burning attempts.
+# CircuitOpenError means the breaker is OPEN: retrying would just hammer a known
+# dead endpoint, so it is skipped immediately.
+_NON_RETRYABLE: tuple[type[BaseException], ...] = (CircuitOpenError,)
+
+
 def _is_retryable(exc: BaseException) -> bool:
+    if isinstance(exc, _NON_RETRYABLE):
+        return False
     if isinstance(exc, httpx.HTTPStatusError):
         return exc.response.status_code >= 500
-    return isinstance(exc, (httpx.ConnectError, httpx.TimeoutException, httpx.ReadError, httpx.RemoteProtocolError))
+    return isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.TimeoutException,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+        ),
+    )
 
 
 def _log_retry(retry_state: RetryCallState) -> None:
@@ -105,8 +130,20 @@ class EvolutionClient:
             logger.debug("ratelimit.wait", wait_seconds=round(wait, 3))
             await asyncio.sleep(wait)
 
-    @_retry
     async def send_list_message(self, payload: dict) -> dict:
+        """Send a list message via Evolution API with circuit-breaker protection."""
+        if not await circuit_breaker.before_call("sendList"):
+            raise CircuitOpenError("circuit breaker is OPEN, skipping send_list")
+        try:
+            result = await self._send_list_message(payload)
+            circuit_breaker.record_success("sendList")
+            return result
+        except Exception:
+            await circuit_breaker.record_failure("sendList")
+            raise
+
+    @_retry
+    async def _send_list_message(self, payload: dict) -> dict:
         await self.acquire()
         url = f"{settings.EVOLUTION_API_URL}/message/sendList/{settings.EVOLUTION_INSTANCE_NAME}"
         logger.info("evolution.send", telefone=payload.get("number"))
@@ -115,12 +152,90 @@ class EvolutionClient:
         logger.debug("evolution.send.ok", status=r.status_code)
         return r.json()
 
-    @_retry
     async def send_text_message(self, telefone: str, text: str) -> dict:
+        """Send a text message to an individual phone via Evolution API."""
+        return await self._send_text_with_circuit(telefone, text, log_field="telefone")
+
+    async def send_group_text_message(self, group_jid: str, text: str) -> dict:
+        """Send a text message to a WhatsApp group JID.
+
+        Groups use the same EvolutionAPI sendText endpoint, but the `number`
+        payload is a group JID such as `120363000000000000@g.us`. Do not call
+        check_exists() for groups; that endpoint is for individual numbers.
+        """
+        return await self._send_text_with_circuit(
+            group_jid, text, log_field="group_jid"
+        )
+
+    async def send_group_image_message(
+        self, group_jid: str, image_bytes: bytes, caption: str = ""
+    ) -> dict:
+        """Send an image to a WhatsApp group via EvolutionAPI sendMedia.
+
+        Uses the same endpoint as individual media send but with a group JID.
+        Images are base64-encoded in the payload.
+        """
+        if not await circuit_breaker.before_call("sendMedia"):
+            raise CircuitOpenError("circuit breaker is OPEN, skipping send_media")
+        try:
+            result = await self._send_image_message(group_jid, image_bytes, caption)
+            circuit_breaker.record_success("sendMedia")
+            return result
+        except Exception:
+            await circuit_breaker.record_failure("sendMedia")
+            raise
+
+    @_retry
+    async def _send_image_message(
+        self, number_or_jid: str, image_bytes: bytes, caption: str
+    ) -> dict:
+        await self.acquire()
+        url = (
+            f"{settings.EVOLUTION_API_URL}/message/sendMedia/"
+            f"{settings.EVOLUTION_INSTANCE_NAME}"
+        )
+        b64 = base64.b64encode(image_bytes).decode("ascii")
+        payload = {
+            "number": number_or_jid,
+            "mediatype": "image",
+            "media": b64,
+            "caption": caption,
+        }
+        logger.info(
+            "evolution.send_image",
+            group_jid=number_or_jid,
+            size_bytes=len(image_bytes),
+        )
+        r = await self._ensure_client().post(url, json=payload)
+        r.raise_for_status()
+        logger.debug("evolution.send_image.ok", status=r.status_code)
+        return r.json()
+
+    async def _send_text_with_circuit(
+        self, number_or_jid: str, text: str, log_field: str
+    ) -> dict:
+        if not await circuit_breaker.before_call("sendText"):
+            raise CircuitOpenError("circuit breaker is OPEN, skipping send_text")
+        try:
+            result = await self._send_text_message(
+                number_or_jid, text, log_field=log_field
+            )
+            circuit_breaker.record_success("sendText")
+            return result
+        except Exception:
+            await circuit_breaker.record_failure("sendText")
+            raise
+
+    @_retry
+    async def _send_text_message(
+        self, number_or_jid: str, text: str, log_field: str = "telefone"
+    ) -> dict:
         await self.acquire()
         url = f"{settings.EVOLUTION_API_URL}/message/sendText/{settings.EVOLUTION_INSTANCE_NAME}"
-        logger.info("evolution.send_text", telefone=telefone)
-        r = await self._ensure_client().post(url, json={"number": telefone, "text": text})
+        logger.info("evolution.send_text", **{log_field: number_or_jid})
+        r = await self._ensure_client().post(
+            url, json={"number": number_or_jid, "text": text}
+        )
         r.raise_for_status()
         logger.debug("evolution.send_text.ok", status=r.status_code)
         return r.json()
@@ -134,7 +249,9 @@ class EvolutionClient:
             data = r.json()
             return bool(data and data[0].get("exists"))
         except Exception as exc:
-            logger.warning("evolution.check_exists_failed", telefone=telefone, error=str(exc))
+            logger.warning(
+                "evolution.check_exists_failed", telefone=telefone, error=str(exc)
+            )
             return True  # em caso de falha, tenta enviar (fail-open)
 
 

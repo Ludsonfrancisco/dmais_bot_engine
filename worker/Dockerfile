@@ -18,16 +18,36 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 # Diretório de trabalho
 WORKDIR /app
 
-# Instalar dependências do sistema (mínimo necessário)
+# Instalar dependências do sistema (curl + Chromium deps para Playwright)
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         curl \
+        libnss3 \
+        libnspr4 \
+        libatk-bridge2.0-0 \
+        libatk1.0-0 \
+        libcups2 \
+        libdrm2 \
+        libdbus-1-3 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxrandr2 \
+        libgbm1 \
+        libpango-1.0-0 \
+        libcairo2 \
+        libasound2t64 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements primeiro (cache de layer do Docker)
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
+
+# Instalar navegador Chromium para Playwright (root, antes do USER)
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN python -m playwright install --with-deps chromium && \
+    chmod -R 755 /ms-playwright
 
 # Copiar código do worker como pacote Python (worker.main:app)
 COPY . ./worker/

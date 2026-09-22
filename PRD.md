@@ -1,9 +1,11 @@
 # PRD — `dmais_bot_engine` (Motor Local de Disparo WhatsApp)
 
-> **Versão:** 1.0
-> **Data:** 2026-05-06
+> **Versão:** 1.1
+> **Data:** 2026-05-20
 > **Owner:** Equipe DMais — Logística Reversa
 > **Status:** Draft (pronto para Sprint C)
+
+> ⚠️ **NOTA ARQUITETURAL IMPORTANTE** — O bot **NÃO usa List Messages do WhatsApp**. A Meta deprecou List Messages no protocolo Multi-Device (Baileys), e a implementação real usa **texto plano com opções numeradas (1/2/3)** via `sendText`. Respostas são classificadas por número (`"1"`, `"2"`, `"3"`) ou palavras-chave (`"confirmar"`, `"remarcar"`, `"ja entreguei"`), e não por `rowId` de List Message. Toda referência a `sendList`, `rowId` e "List Message" neste documento é mantida apenas para contexto histórico; a implementação segue exclusivamente `sendText` + texto numerado.
 
 ---
 
@@ -25,14 +27,14 @@ O motor **não possui banco de dados próprio**. Todo o estado durável vive na 
 |---|----------|---------------------|
 | O1 | Disparar mensagens WhatsApp de confirmação de coleta automaticamente | 100 % dos agendamentos elegíveis recebem a mensagem inicial dentro do intervalo de polling |
 | O2 | Capturar respostas do cliente e roteá-las de volta ao Django | 0 webhooks perdidos; 100 % de idempotência em retries do Evolution |
-| O3 | Respeitar limites operacionais do WhatsApp | Nunca ultrapassar 30 msg/min por instância |
+|| O3 | Respeitar limites operacionais do WhatsApp | Nunca ultrapassar 4 msg/min por instância (anti-bloqueio) |
 | O4 | Operar de forma resiliente sem intervenção manual | Reinício automático de containers; reconexão automática à EvolutionAPI |
 | O5 | Ser portável e isolado | `docker compose up` em qualquer host com Docker, sem depender do projeto Django |
 
 ### Não-objetivos (Out of Scope)
 
 - Persistir histórico de mensagens (responsabilidade do Django).
-- Enviar mídias (imagens, áudios, documentos) — apenas List Messages textuais.
+- Enviar mídias (imagens, áudios, documentos) — apenas mensagens de texto com opções numeradas.
 - Multi-tenant: o motor opera **uma única instância EvolutionAPI** por deploy.
 - UI de administração: configuração 100 % via `.env`.
 - Mensagens com links (proibido pelas regras de negócio).
@@ -101,10 +103,10 @@ O motor **não possui banco de dados próprio**. Todo o estado durável vive na 
    │     ├─► verifica Redis: já enviado? (chave `sent:<agendamento_id>`)
    │     │   - se sim → skip
    │     │
-   │     ├─► aguarda token do bucket de rate-limit (30/min)
+   │     ├─► aguarda token do bucket de rate-limit (4/min)
    │     │
-   │     ├─► monta payload List Message inicial (3 opções)
-   │     │   POST {EVOLUTION_API_URL}/message/sendList/{INSTANCE}
+   │     ├─► monta mensagem de texto com opções numeradas (via build_initial_text)
+   │     │   POST {EVOLUTION_API_URL}/message/sendText/{INSTANCE}
    │     │
    │     └─► marca Redis: `sent:<agendamento_id>` TTL 24h
    │
@@ -122,11 +124,12 @@ O motor **não possui banco de dados próprio**. Todo o estado durável vive na 
    ├─► SETNX Redis `evt:<event_id>` TTL 24h
    │
    ├─► classifica resposta:
-   │     ├── opção CONFIRMAR  → repassa ao Django
-   │     ├── opção REMARCAR   → busca slots no Django + envia List de horários
-   │     ├── opção JA_ENTREGUE → repassa ao Django
+   │     ├── número "1" ou palavra-chave "confirmar"  → repassa ao Django (CONFIRMAR)
+   │     ├── número "2" ou palavra-chave "remarcar"   → busca slots no Django + envia texto numerado de horários
+   │     ├── número "3" ou palavra-chave "ja entreguei" → repassa ao Django (JA_ENTREGUE)
+   │     ├── número correspondente a horário (ex.: "1", "2" em contexto de slots) → extrai slot do mapping
    │     └── texto livre / inválido → incrementa `errors:<chat_id>`
-   │           ├── < 3 → envia fallback + reenvia List inicial
+   │           ├── < 3 → envia fallback + reenvia texto inicial
    │           └── ≥ 3 → marca FALHA no Django e encerra conversa
    │
    └─► POST /api/logistica-reversa/whatsapp-webhook/  (sempre que houver evento canônico)
@@ -151,7 +154,7 @@ Todas obrigatórias salvo indicação contrária. Carregadas em `worker/settings
 | `EVOLUTION_INSTANCE_NAME` | str | `dmais` | Nome da instância (sessão WhatsApp) na Evolution. |
 | `REDIS_URL` | URL | `redis://redis:6379/0` | URL de conexão Redis. |
 | `POLLING_INTERVAL_SECONDS` | int | `60` | Intervalo entre ciclos de polling. |
-| `MAX_MESSAGES_PER_MINUTE` | int | `30` | Capacidade do token bucket de envio. |
+| `MAX_MESSAGES_PER_MINUTE` | int | `4` | Capacidade do token bucket de envio (anti-bloqueio WhatsApp). |
 | `LOG_LEVEL` | str | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. |
 | `WORKER_HTTP_PORT` | int | `8000` | Porta exposta pelo FastAPI do worker. |
 
@@ -159,52 +162,48 @@ Todas obrigatórias salvo indicação contrária. Carregadas em `worker/settings
 
 ## 6. Payloads
 
-### 6.1 List Message inicial — 3 opções
+### 6.1 Mensagem inicial — texto com 3 opções numeradas
 
-**Endpoint Evolution:** `POST {EVOLUTION_API_URL}/message/sendList/{EVOLUTION_INSTANCE_NAME}`
+**Endpoint Evolution:** `POST {EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE_NAME}`
 **Headers:** `apikey: {EVOLUTION_API_KEY}`, `Content-Type: application/json`
 
-```json
-{
-  "number": "55<DDD><numero>",
-  "title": "Confirmação de Coleta",
-  "description": "Olá {nome}! Sua coleta está agendada para {data} às {hora}. O que deseja fazer?",
-  "buttonText": "Selecionar opção",
-  "footerText": "DMais Logística Reversa",
-  "sections": [
-    {
-      "title": "Opções",
-      "rows": [
-        { "rowId": "CONFIRMAR",   "title": "Confirmar coleta",         "description": "Mantém o horário agendado" },
-        { "rowId": "REMARCAR",    "title": "Remarcar para outro dia",  "description": "Escolher novo horário"     },
-        { "rowId": "JA_ENTREGUE", "title": "Já entreguei",             "description": "Produto já foi devolvido"  }
-      ]
-    }
-  ]
-}
-```
-
-### 6.2 List Message de horários — até 10 slots
+**Payload:**
 
 ```json
 {
   "number": "55<DDD><numero>",
-  "title": "Escolha um novo horário",
-  "description": "Selecione um dos horários disponíveis abaixo:",
-  "buttonText": "Ver horários",
-  "footerText": "DMais Logística Reversa",
-  "sections": [
-    {
-      "title": "Horários disponíveis",
-      "rows": [
-        { "rowId": "SLOT:<iso8601>", "title": "Seg 12/05 às 09h-11h", "description": "" }
-      ]
-    }
-  ]
+  "text": "Olá {nome}! Tudo bem?\n\nAqui é da AT3 Internet. Gostaríamos de agendar a visita do técnico para realizar a coleta do equipamento agendada para {DD/MM}.\n\nResponda com o número da opção:\n1 — Confirmar coleta\n2 — Remarcar para outro dia\n3 — Já entreguei"
 }
 ```
 
-> **Regras:** máximo 10 `rows` por seção (limite do WhatsApp); `rowId` deve ser um identificador parseável do tipo `SLOT:<iso8601>` para o motor extrair o horário escolhido.
+> A função `build_initial_text(agendamento)` retorna `(telefone, texto_plano)` — não é um payload JSON de List Message.
+
+### 6.2 Mensagem de horários — texto numerado com até 10 slots
+
+**Endpoint Evolution:** `POST {EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE_NAME}`
+**Headers:** `apikey: {EVOLUTION_API_KEY}`, `Content-Type: application/json`
+
+**Payload (exemplo com seleção de período):**
+
+```json
+{
+  "number": "55<DDD><numero>",
+  "text": "Ótimo! Para Terça, 19/05, qual período seria melhor para a coleta?\n\nResponda com o número da opção:\n1 — Manhã (08:00 às 12:00)\n2 — Tarde (12:00 às 18:00)"
+}
+```
+
+**Payload (exemplo com slots de horário):**
+
+```json
+{
+  "number": "55<DDD><numero>",
+  "text": "Escolha um dos horários disponíveis respondendo com o número:\n1 — Seg 12/05 às 09h-11h\n2 — Ter 13/05 às 14h-16h"
+}
+```
+
+> A função `build_horarios_text(agendamento, slots)` retorna `(telefone, texto, mapping)` — onde `mapping` é um dicionário `{número_str: slot_dict}` usado pelo handler `on_response` para resolver qual horário foi escolhido.
+
+> **Regras:** máximo 10 opções numeradas (limite prático por mensagem); o mapping interno mapeia cada número (1–10) ao slot correspondente vindo do Django. O texto legível é formatado a partir de `inicio` e `fim` (ex.: `"Seg 12/05 às 09h-11h"`)
 
 ### 6.3 Webhook que o motor envia ao Django
 
@@ -274,9 +273,8 @@ Qualquer outro valor é ignorado silenciosamente pelo poller.
 ```
 
 - Lista vazia `[]` significa sem slots disponíveis → `enviar_slots` deve enviar mensagem neutra e postar `FALHA` ao Django.
-- Máximo 10 itens considerados (limite WhatsApp); itens excedentes são descartados silenciosamente.
-- O `rowId` da List Message é montado como `SLOT:{inicio}` (campo `inicio` em ISO 8601).
-- O `title` legível é formatado a partir de `inicio` e `fim` (ex.: `"Seg 12/05 às 09h-11h"`).
+- Máximo 10 itens considerados (limite prático por mensagem numerada); itens excedentes são descartados silenciosamente.
+- O mapping interno mapeia cada número (1–10) ao slot. O texto legível é formatado a partir de `inicio` e `fim` (ex.: `"Seg 12/05 às 09h-11h"`) pela função `build_horarios_text`.
 
 ---
 
@@ -291,13 +289,15 @@ Qualquer outro valor é ignorado silenciosamente pelo poller.
 ## 8. Rate Limiting
 
 - Implementado como **token bucket em Redis** (chaves `ratelimit:bucket` e `ratelimit:last_refill`).
-- Capacidade = `MAX_MESSAGES_PER_MINUTE` (default 30).
-- Refill linear (1 token a cada `60/MAX` segundos).
+- Capacidade = `MAX_MESSAGES_PER_MINUTE` (default 4 — valor conservador para anti-bloqueio WhatsApp).
+- Refill linear (1 token a cada `60/MAX` segundos ≈ 1 a cada 15s).
 - Cliente do Evolution chama `acquire()` antes de cada envio; se sem tokens, aguarda assíncrono.
 
 ---
 
 ## 9. Endpoints expostos pelo worker (FastAPI)
+
+> **Nota:** O motor usa exclusivamente o endpoint `sendText` da EvolutionAPI para todas as mensagens (`/message/sendText/{INSTANCE}`). O endpoint `sendList` **não é utilizado** pois a Meta deprecou List Messages no protocolo Multi-Device.
 
 | Método | Path | Descrição |
 |--------|------|-----------|
@@ -320,9 +320,9 @@ Qualquer outro valor é ignorado silenciosamente pelo poller.
 
 1. `docker compose up -d` sobe os 3 serviços com healthcheck `healthy` em até 60 s.
 2. Pareamento via QRCode é possível através da rota padrão da EvolutionAPI.
-3. Polling busca pendentes do Django e dispara List Message inicial sem ultrapassar 30/min.
+3. Polling busca pendentes do Django e dispara mensagem de texto com opções numeradas sem ultrapassar 4/min.
 4. Webhook do Evolution é processado idempotentemente (reenvios não duplicam ações).
-5. Resposta `REMARCAR` resulta em segunda List com até 10 slots vindos do Django.
+5. Resposta `REMARCAR` resulta em mensagem de texto com horários numerados (até 10 slots vindos do Django).
 6. Resposta em texto livre dispara fallback; após 3, envia `FALHA` ao Django.
 7. Logs em stdout em JSON com `correlation_id` rastreável ponta-a-ponta.
 8. Reiniciar containers preserva sessão WhatsApp (volume `evolution-instances` persistido).
@@ -333,7 +333,7 @@ Qualquer outro valor é ignorado silenciosamente pelo poller.
 
 | Risco | Mitigação |
 |-------|-----------|
-| Banimento do número WhatsApp por flooding | Token bucket fixo em 30/min; nunca enviar links. |
+| Banimento do número WhatsApp por flooding | Token bucket fixo em 4/min (conservador); nunca enviar links. |
 | Sessão Baileys quebrar | Volume persistente + healthcheck + reconexão pela EvolutionAPI. |
 | Django indisponível | `tenacity` com backoff exponencial; mensagens não são reprocessadas, ficam pendentes para o próximo ciclo. |
 | Webhook duplicado do Evolution | Idempotência `evt:<id>` em Redis. |
@@ -344,6 +344,6 @@ Qualquer outro valor é ignorado silenciosamente pelo poller.
 ## 13. Glossário
 
 - **Agendamento:** registro no Django representando uma coleta a ser confirmada.
-- **List Message:** tipo de mensagem interativa do WhatsApp com opções clicáveis.
+- **List Message:** tipo de mensagem interativa do WhatsApp com opções clicáveis *(obsoleto — não utilizado; o bot usa texto plano com opções numeradas via `sendText`)*.
 - **Instância (Evolution):** sessão Baileys correspondente a um número de WhatsApp pareado.
 - **Correlation ID:** UUID que amarra todos os logs de um mesmo fluxo (polling + envio + webhook + repasse).

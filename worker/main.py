@@ -1,6 +1,7 @@
 import asyncio
+import base64
 import random
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import date, timedelta
 
 import httpx
@@ -8,19 +9,41 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 
 from worker.api_client import django_client
-from worker.evolution_client import evolution_client
-from worker.handlers import enviar_inicial, on_response, on_timeout
+from worker.circuit_breaker import circuit_breaker
+from worker.evolution_client import CircuitOpenError, evolution_client
+from worker.handlers import (
+    enviar_inicial,
+    on_conversation_timeout,
+    on_response,
+    on_timeout,
+)
+from worker.handlers.on_response import cleanup_chat_locks
 from worker.logs import configure_logging, get_logger, new_correlation_id
 from worker.redis_queue import redis_queue
+from worker.reports.screenshots import capture_portal_page
+from worker.reports.sender import send_report_screenshot, send_report_text
 from worker.settings import settings
+from worker.reports.formatter import format_cycle_report, format_morning_message
+from worker.reports.stats import get_deltas, save_snapshot
+from worker.reports.data import (
+    fetch_city_group_counts,
+    fetch_group_counts,
+    fetch_status_header,
+)
+from worker.scheduler import _PRINTS, run_scheduler
 
 configure_logging(settings.LOG_LEVEL)
 logger = get_logger(__name__)
+
+# When the circuit is OPEN, poll again sooner than the full interval so the
+# breaker can transition to HALF_OPEN and recover quickly once Evolution is back.
+_CIRCUIT_OPEN_RETRY_SECONDS = 30
 
 
 # ---------------------------------------------------------------------------
 # Adapter Django → shape esperado pelo worker
 # ---------------------------------------------------------------------------
+
 
 def _adapt(raw: dict) -> dict:
     """Converte agendamento do Django (cliente_*, data_agendada, id-UUID) para o shape
@@ -39,12 +62,12 @@ def _adapt(raw: dict) -> dict:
         pass
 
     return {
-        "agendamento_id": raw.get("id"),                  # UUID string
-        "nome":           raw.get("cliente_nome", ""),
-        "telefone":       raw.get("cliente_telefone", "").lstrip("+"),
-        "data":           data_str,
-        "hora":           raw.get("janela_horario", "MANHA"),
-        "status":         raw.get("status"),
+        "agendamento_id": raw.get("id"),  # UUID string
+        "nome": raw.get("cliente_nome", ""),
+        "telefone": raw.get("cliente_telefone", "").lstrip("+"),
+        "data": data_str,
+        "hora": raw.get("janela_horario", "MANHA"),
+        "status": raw.get("status"),
     }
 
 
@@ -52,11 +75,50 @@ def _adapt(raw: dict) -> dict:
 # Polling loop
 # ---------------------------------------------------------------------------
 
+
 async def _poll_loop() -> None:
     """Ciclo permanente: nunca deve morrer — todas as exceções são capturadas."""
+    cleanup_counter = 0
     while True:
         new_correlation_id()
         try:
+            # Timeout scan: check for conversations that expired due to inactivity
+            try:
+                timed_out = await redis_queue.scan_timeouts()
+                for telefone in timed_out:
+                    try:
+                        await on_conversation_timeout.handle(telefone)
+                    except Exception as exc:
+                        logger.error(
+                            "poller.timeout_handler_error",
+                            telefone=telefone,
+                            error=str(exc),
+                        )
+            except Exception as exc:
+                logger.error("poller.timeout_scan_error", error=str(exc))
+
+            # Periodic chat-lock cleanup: every 10 cycles, remove idle locks
+            cleanup_counter += 1
+            if cleanup_counter >= 10:
+                try:
+                    cleanup_chat_locks()
+                except Exception as exc:
+                    logger.error("poller.lock_cleanup_error", error=str(exc))
+                cleanup_counter = 0
+
+            # Circuit breaker check: skip entire poll cycle if Evolution API is down.
+            # The poller dispatches via send_text_message, so it watches the
+            # 'sendText' endpoint specifically.
+            # Retry sooner than the full interval so recovery (HALF_OPEN) happens fast.
+            if await circuit_breaker.is_open("sendText"):
+                logger.warning(
+                    "poller.skip",
+                    reason="circuit open, retrying soon",
+                    retry_in=_CIRCUIT_OPEN_RETRY_SECONDS,
+                )
+                await asyncio.sleep(_CIRCUIT_OPEN_RETRY_SECONDS)
+                continue
+
             page = 1
             while True:
                 try:
@@ -76,6 +138,13 @@ async def _poll_loop() -> None:
                         elif status == "TIMEOUT":
                             await on_timeout.handle(raw.get("id"))
                         # demais status ignorados silenciosamente
+                    except CircuitOpenError:
+                        logger.warning(
+                            "poller.circuit_open",
+                            status=status,
+                            agendamento_id=raw.get("id"),
+                        )
+                        dispatched = False  # don't jitter, skip to next item
                     except Exception as exc:
                         logger.error(
                             "poller.handler_error",
@@ -107,18 +176,33 @@ async def _poll_loop() -> None:
 # Lifespan
 # ---------------------------------------------------------------------------
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    task = asyncio.create_task(_poll_loop(), name="poller")
-    logger.info("worker.started", polling_interval=settings.POLLING_INTERVAL_SECONDS)
+    task = None
+    if settings.POLLING_ENABLED:
+        task = asyncio.create_task(_poll_loop(), name="poller")
+    else:
+        logger.info("poller.disabled")
+
+    sched_task = asyncio.create_task(run_scheduler(), name="scheduler")
+    logger.info(
+        "worker.started",
+        polling_enabled=settings.POLLING_ENABLED,
+        polling_interval=settings.POLLING_INTERVAL_SECONDS,
+        scheduler_tz=settings.REPORT_TIMEZONE,
+    )
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        if task is not None:
+            task.cancel()
+        sched_task.cancel()
+        if task is not None:
+            with suppress(asyncio.CancelledError):
+                await task
+        with suppress(asyncio.CancelledError):
+            await sched_task
         await django_client.aclose()
         await evolution_client.aclose()
         await redis_queue.aclose()
@@ -136,8 +220,11 @@ app = FastAPI(title="dmais_bot_engine", lifespan=lifespan)
 # POST /webhook/evolution
 # ---------------------------------------------------------------------------
 
+
 @app.post("/webhook/evolution", status_code=200)
 async def webhook_evolution(request: Request):
+    if not settings.WEBHOOK_ENABLED:
+        return {"status": "ok", "skipped": "webhook_disabled"}
     event = await request.json()
     await on_response.handle(event)
     return {"status": "ok"}
@@ -146,6 +233,7 @@ async def webhook_evolution(request: Request):
 # ---------------------------------------------------------------------------
 # GET /health  (PRD §9 + 10.C.24)
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health")
 async def health():
@@ -176,6 +264,7 @@ async def health():
 # POST /debug/test-send  (PRD §9 + 10.C.25)
 # ---------------------------------------------------------------------------
 
+
 class _TestSendBody(BaseModel):
     telefone: str
     nome: str
@@ -187,6 +276,7 @@ class _TestSendBody(BaseModel):
 async def debug_test_send(body: _TestSendBody):
     # agendamento_id sintético único por chamada (evita bloqueio do `was_sent` no Redis)
     import time as _time
+
     agendamento = {
         "agendamento_id": int(_time.time() * 1000),
         "nome": body.nome,
@@ -197,3 +287,189 @@ async def debug_test_send(body: _TestSendBody):
     }
     evolution_response = await enviar_inicial.handle(agendamento)
     return {"status": "ok", "evolution_response": evolution_response}
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-send-text  (Sprint Report Automation)
+# ---------------------------------------------------------------------------
+
+
+class _ReportDebugTextBody(BaseModel):
+    text: str = "Teste de envio do dmais_bot_engine para o grupo de homologação."
+
+
+@app.post("/reports/debug-send-text")
+async def debug_send_report_text(body: _ReportDebugTextBody):
+    results = await send_report_text(body.text)
+    return {"status": "ok", "sent": results}
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-screenshot  (Sprint 2 — Print autenticado do portal)
+# ---------------------------------------------------------------------------
+
+
+class _ReportDebugScreenshotBody(BaseModel):
+    path: str = "/backlog/"
+    viewport_width: int = 1280
+    viewport_height: int = 720
+    element_selector: str | None = None
+    select_value: str | None = None
+    row_dim: str | None = None
+    col_dim: str | None = None
+    font_scale: float = 1.0
+    light_mode: bool = False
+
+
+@app.post("/reports/debug-screenshot")
+async def debug_screenshot(body: _ReportDebugScreenshotBody):
+    screenshot_bytes = await capture_portal_page(
+        body.path,
+        viewport_width=body.viewport_width,
+        viewport_height=body.viewport_height,
+        element_selector=body.element_selector,
+        select_value=body.select_value,
+        row_dim=body.row_dim,
+        col_dim=body.col_dim,
+        font_scale=body.font_scale,
+        light_mode=body.light_mode,
+    )
+    return {
+        "status": "ok",
+        "path": body.path,
+        "size_bytes": len(screenshot_bytes),
+        "image_base64": base64.b64encode(screenshot_bytes).decode("ascii"),
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-send-screenshot  (Sprint 3)
+# ---------------------------------------------------------------------------
+
+
+class _ReportDebugSendScreenshotBody(BaseModel):
+    path: str = "/backlog/"
+    caption: str = ""
+    viewport_width: int = 1280
+    viewport_height: int = 720
+    element_selector: str | None = None
+    row_dim: str | None = None
+    col_dim: str | None = None
+    light_mode: bool = False
+
+
+@app.post("/reports/debug-send-screenshot")
+async def debug_send_screenshot(body: _ReportDebugSendScreenshotBody):
+    screenshot_bytes = await capture_portal_page(
+        body.path,
+        viewport_width=body.viewport_width,
+        viewport_height=body.viewport_height,
+        element_selector=body.element_selector,
+        row_dim=body.row_dim,
+        col_dim=body.col_dim,
+        light_mode=body.light_mode,
+    )
+    results = await send_report_screenshot(screenshot_bytes, caption=body.caption)
+    return {"status": "ok", "sent": results}
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-morning  (Sprint 4 — Mensagem da manhã)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/reports/debug-morning")
+async def debug_morning():
+    from worker.evolution_client import evolution_client
+    from worker.reports.destinations import get_report_destinations
+
+    text = format_morning_message()
+    results = []
+    for dest in get_report_destinations():
+        resp = await evolution_client.send_group_text_message(dest.group_jid, text)
+        results.append({"target": dest.name, "response": resp})
+    return {"status": "ok", "sent": results}
+
+
+# ---------------------------------------------------------------------------
+# POST /reports/debug-cycle  (Sprint 4 — Ciclo completo)
+# ---------------------------------------------------------------------------
+
+
+class _DebugCycleBody(BaseModel):
+    hour: str = "06:10"
+
+
+@app.post("/reports/debug-cycle")
+async def debug_cycle(body: _DebugCycleBody):
+
+    # Launch a single browser session for everything
+    from playwright.async_api import async_playwright
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch()
+        ctx = await browser.new_context(viewport={"width": 1920, "height": 720})
+        page = await ctx.new_page()
+
+        # Login
+        await page.goto(f"{settings.DMAIS_PORTAL_URL}/login/", wait_until="networkidle")
+        await page.fill('input[type="email"]', settings.DMAIS_PORTAL_EMAIL)
+        await page.fill('input[type="password"]', settings.DMAIS_PORTAL_PASSWORD)
+        await page.click('button[type="submit"]')
+        await page.wait_for_url(lambda u: "/login" not in u, timeout=15000)
+
+        # Fetch portal data
+        status = await fetch_status_header(page)
+        group_counts = await fetch_group_counts(page)
+        city_counts = await fetch_city_group_counts(page)
+
+        # Calculate deltas
+        deltas = await get_deltas(group_counts, city_counts)
+
+        # Save current snapshot for next cycle
+        await save_snapshot(group_counts, city_counts)
+
+        await browser.close()
+
+    # Format report
+    entrante = status.get("ultima_atualizacao_abertura", "--:--")
+    download = status.get("ultimo_download", "--:--")
+    text = format_cycle_report(
+        body.hour,
+        entrante,
+        download,
+        group_counts,
+        deltas["groups"],
+        deltas["cities"],
+        deltas["has_previous"],
+    )
+
+    # Send prints using the canonical definition from scheduler (keeps format in sync)
+    from worker.evolution_client import evolution_client
+    from worker.reports.destinations import get_report_destinations
+
+    destinations = get_report_destinations()
+
+    for prt in _PRINTS:
+        img = await capture_portal_page(
+            prt["path"],
+            viewport_width=prt["vw"],
+            viewport_height=prt["vh"],
+            element_selector=prt["el"],
+            row_dim=prt.get("row"),
+            col_dim=prt.get("col"),
+            outlier_group=prt.get("outlier_group"),
+            light_mode=prt.get("light", False),
+        )
+        for dest in destinations:
+            await evolution_client.send_group_image_message(
+                dest.group_jid, img, caption=prt["cap"]
+            )
+
+    # Send text report after prints (without test prefix)
+    results = []
+    for dest in destinations:
+        resp = await evolution_client.send_group_text_message(dest.group_jid, text)
+        results.append({"target": dest.name, "response": resp})
+
+    return {"status": "ok", "report_sent": results, "prints_sent": len(_PRINTS)}

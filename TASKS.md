@@ -150,16 +150,16 @@
 ## Bloco 5 — Payloads
 
 ### 10.C.15 — `worker/payloads/list_initial.py`
-- [x] Função `build_initial_list(agendamento: dict) -> dict`
-- [x] Monta payload conforme PRD §6.1 (3 rows: CONFIRMAR, REMARCAR, JA_ENTREGUE)
+- [x] Função `build_initial_text(agendamento: dict) -> tuple[str, str]`
+- [x] Monta texto conforme PRD §6.1 (3 opções numeradas: 1—Confirmar, 2—Remarcar, 3—Já entreguei)
 - [x] Validação: nunca incluir URLs no texto
 - [x] Tipos via `pydantic` (opcional mas recomendado) — pure function + dict, sem overhead pydantic
 
 ### 10.C.16 — `worker/payloads/list_horarios.py`
-- [x] Função `build_horarios_list(agendamento: dict, slots: list[dict]) -> dict`
+- [x] Função `build_horarios_text(agendamento: dict, slots: list[dict]) -> tuple[str, str, dict]`
 - [x] Limita a 10 slots máximo (`slots[:10]`)
-- [x] `rowId` = `SLOT:<iso8601>`
-- [x] Formata `title` legível em pt-BR (ex.: `"Seg 12/05 às 09h-11h"`)
+- [x] Retorna mapping `{número_str: slot_dict}` para resolução pelo handler
+- [x] Formata texto legível em pt-BR (ex.: `"1 — Seg 12/05 às 09h-11h"`)
 
 ---
 
@@ -168,13 +168,13 @@
 ### 10.C.17 — Handler `enviar_inicial`
 - [x] Arquivo `worker/handlers/enviar_inicial.py`
 - [x] Função `async def handle(agendamento: dict) -> None`
-- [x] Verifica `was_sent`, monta payload via `list_initial`, chama `evolution_client.send_list_message`, marca `sent:<id>`
+- [x] Verifica `was_sent`, monta texto via `build_initial_text`, chama `evolution_client.send_text_message`, marca `sent:<id>`
 - [x] Logs com `correlation_id` único por agendamento
 
 ### 10.C.18 — Handler `enviar_slots`
 - [x] Arquivo `worker/handlers/enviar_slots.py`
 - [x] Função `async def handle(agendamento_id: int, telefone: str) -> None`
-- [x] Chama `api_client.listar_slots`, monta payload via `list_horarios`, envia via Evolution
+- [x] Chama `api_client.listar_slots`, monta texto numerado via `build_horarios_text`, envia via `evolution_client.send_text_message`
 - [x] Trata caso "sem slots disponíveis" → envia mensagem texto neutra E posta `FALHA` no Django
 
 ### 10.C.19 — Handler `on_response` (webhook)
@@ -182,10 +182,11 @@
 - [x] Função `async def handle(evolution_event: dict) -> None`
 - [x] Idempotência via `is_duplicate_event`
 - [x] Classifica evento:
-  - [x] List reply com `rowId` válido (`CONFIRMAR`, `REMARCAR`, `JA_ENTREGUE`, `SLOT:*`)
+  - [x] Número/palavra-chave válido: `"1"/"confirmar"` → CONFIRMAR, `"2"/"remarcar"` → REMARCAR, `"3"/"ja entreguei"` → JA_ENTREGUE
+  - [x] Número correspondente a slot em contexto de horários → extrai slot do mapping
   - [x] Texto livre / opção desconhecida
 - [x] Para `REMARCAR`: chama `enviar_slots`
-- [x] Para `SLOT:*`: extrai ISO e posta no Django
+- [x] Para slot escolhido: extrai dados do mapping e posta no Django
 - [x] Para inválidos: incrementa erro, envia fallback, reenvia inicial; ao atingir 3, posta `FALHA`
 - [x] Sempre posta evento canônico no Django
 
@@ -269,29 +270,29 @@
   - [x] `POLLING_INTERVAL_SECONDS=0` → `ValidationError`
   - [x] `DJANGO_API_BASE_URL` com barra final → armazenado sem barra
 - [x] `worker/tests/test_payloads.py` *(implementar após 10.C.15 e 10.C.16)*
-  - [x] `build_initial_list` → payload com exatamente 3 rows (CONFIRMAR, REMARCAR, JA_ENTREGUE)
-  - [x] `build_initial_list` → nenhum campo contém URL
-  - [x] `build_horarios_list` com 12 slots → payload com exatamente 10 rows
-  - [x] `build_horarios_list` → `rowId` começa com `SLOT:`
-  - [x] `build_horarios_list` → `title` em pt-BR (ex.: `"Seg 12/05 às 09h-11h"`)
+  - [x] `build_initial_text` → texto com exatamente 3 opções numeradas (1—Confirmar, 2—Remarcar, 3—Já entreguei)
+  - [x] `build_initial_text` → nenhum campo contém URL
+  - [x] `build_horarios_text` com 12 slots → texto com exatamente 10 opções numeradas
+  - [x] `build_horarios_text` → mapping contém chaves "1"–"10" mapeando para slots
+  - [x] `build_horarios_text` → texto formatado em pt-BR (ex.: `"1 — Seg 12/05 às 09h-11h"`)
 - [x] `worker/tests/test_redis_queue.py` *(implementar após 10.C.13, usa fakeredis)*
   - [x] `is_duplicate_event` retorna `False` na 1ª chamada e `True` na 2ª com mesmo ID
   - [x] `mark_sent` / `was_sent` seguem mesmo padrão
   - [x] `incr_error` retorna 1, 2, 3 em chamadas consecutivas
   - [x] `reset_error` zera o contador
 - [x] `worker/tests/test_on_response.py` *(implementar após 10.C.19, usa mocks)*
-  - [x] `rowId=CONFIRMAR` → chama `post_webhook` com `tipo="CONFIRMAR"`
-  - [x] `rowId=REMARCAR` → chama `enviar_slots.handle`
-  - [x] `rowId=JA_ENTREGUE` → chama `post_webhook` com `tipo="JA_ENTREGUE"`
-  - [x] `rowId=SLOT:2026-05-12T09:00:00-03:00` → chama `post_webhook` com `slot_escolhido` correto
-  - [x] Texto livre 2x → reenvia lista inicial; na 3ª → `post_webhook` com `tipo="FALHA"`
+  - [x] número "1" / texto "confirmar" → chama `post_webhook` com `tipo="CONFIRMAR"`
+  - [x] número "2" / texto "remarcar" → chama `enviar_slots.handle`
+  - [x] número "3" / texto "ja entreguei" → chama `post_webhook` com `tipo="JA_ENTREGUE"`
+  - [x] número correspondente a slot em contexto de horários → chama `post_webhook` com `slot_escolhido` correto
+  - [x] Texto livre 2x → reenvia texto inicial; na 3ª → `post_webhook` com `tipo="FALHA"`
   - [x] Evento duplicado (mesmo `event_id`) → não chama `post_webhook` segunda vez
 
 ### 10.C.29 — Simulação visível end-to-end
 - [x] Executar `make demo` com stack rodando e WhatsApp pareado
 - [x] Verificar no terminal: log JSON com `correlation_id`, `telefone` mascarado, resposta da EvolutionAPI
-- [x] Verificar no WhatsApp: mensagem List interativa recebida com 3 opções (CONFIRMAR / REMARCAR / JÁ ENTREGUEI)
-- [x] Responder `CONFIRMAR` no WhatsApp e verificar log do webhook recebido pelo worker
+- [x] Verificar no WhatsApp: mensagem de texto com 3 opções numeradas recebida (1—Confirmar / 2—Remarcar / 3—Já entreguei)
+- [x] Responder `1` ou `confirmar` no WhatsApp e verificar log do webhook recebido pelo worker
 - [x] Verificar que `make health` retorna `{"status":"ok","redis":"ok","evolution":"ok"}`
 
 ---

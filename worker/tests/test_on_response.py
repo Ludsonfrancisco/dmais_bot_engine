@@ -30,7 +30,10 @@ def _event(event_id: str, text: str | None = None) -> dict:
     msg = {"conversation": text} if text is not None else {}
     return {
         "event": "messages.upsert",
-        "data": {"key": {"id": event_id, "remoteJid": _CHAT_ID, "fromMe": False}, "message": msg},
+        "data": {
+            "key": {"id": event_id, "remoteJid": _CHAT_ID, "fromMe": False},
+            "message": msg,
+        },
     }
 
 
@@ -71,7 +74,10 @@ def patch_all(fake_rq, mock_django, mock_evolution):
 # Estado inicial → pergunta de período / lista de datas / pergunta texto
 # ─────────────────────────────────────────────────────────────
 
-async def test_confirmar_pede_periodo_e_atualiza_estado(fake_rq, mock_evolution, mock_django):
+
+async def test_confirmar_pede_periodo_e_atualiza_estado(
+    fake_rq, mock_evolution, mock_django
+):
     await on_response.handle(_event("evt-c1", "1"))
     # Não posta webhook ainda — apenas pediu período
     mock_django.post_webhook.assert_not_called()
@@ -82,7 +88,9 @@ async def test_confirmar_pede_periodo_e_atualiza_estado(fake_rq, mock_evolution,
     # Estado atualizado
     new_state = await fake_rq.get_state(_TELEFONE)
     assert new_state.startswith(STATE_AGUARDANDO_PERIODO)
-    assert _json.loads(new_state[len(STATE_AGUARDANDO_PERIODO):])["data"] == "2026-05-19"
+    assert (
+        _json.loads(new_state[len(STATE_AGUARDANDO_PERIODO) :])["data"] == "2026-05-19"
+    )
 
 
 async def test_remarcar_envia_lista_de_datas(fake_rq, mock_evolution, mock_django):
@@ -98,7 +106,11 @@ async def test_ja_entreguei_pede_texto_livre(fake_rq, mock_evolution, mock_djang
     await on_response.handle(_event("evt-j1", "3"))
     mock_django.post_webhook.assert_not_called()
     reply = mock_evolution.send_text_message.call_args[0][1]
-    assert "onde" in reply.lower() and "quem" in reply.lower() and "quando" in reply.lower()
+    assert (
+        "onde" in reply.lower()
+        and "quem" in reply.lower()
+        and "quando" in reply.lower()
+    )
     assert await fake_rq.get_state(_TELEFONE) == STATE_AGUARDANDO_TEXTO_ENTREGUE
 
 
@@ -111,8 +123,13 @@ async def test_keywords_funcionam(fake_rq):
 # Estado AGUARDANDO_PERIODO → confirma slot + posta webhook CONFIRMAR
 # ─────────────────────────────────────────────────────────────
 
-async def test_periodo_manha_confirma_e_posta_webhook(fake_rq, mock_django, mock_evolution):
-    await fake_rq.set_state(_TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}")
+
+async def test_periodo_manha_confirma_e_posta_webhook(
+    fake_rq, mock_django, mock_evolution
+):
+    await fake_rq.set_state(
+        _TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}"
+    )
     await on_response.handle(_event("evt-p1", "1"))
     payload = mock_django.post_webhook.call_args[0][0]
     assert payload["tipo"] == "CONFIRMAR"
@@ -125,13 +142,20 @@ async def test_periodo_manha_confirma_e_posta_webhook(fake_rq, mock_django, mock
 
 
 async def test_periodo_tarde_grava_slot_12h(fake_rq, mock_django):
-    await fake_rq.set_state(_TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}")
+    await fake_rq.set_state(
+        _TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}"
+    )
     await on_response.handle(_event("evt-p2", "2"))
-    assert mock_django.post_webhook.call_args[0][0]["slot_escolhido"] == "2026-05-19T12:00:00-03:00"
+    assert (
+        mock_django.post_webhook.call_args[0][0]["slot_escolhido"]
+        == "2026-05-19T12:00:00-03:00"
+    )
 
 
 async def test_keyword_manha_funciona_no_periodo(fake_rq, mock_django):
-    await fake_rq.set_state(_TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}")
+    await fake_rq.set_state(
+        _TELEFONE, f"{STATE_AGUARDANDO_PERIODO}{_json.dumps({'data': '2026-05-19'})}"
+    )
     await on_response.handle(_event("evt-p3", "manhã"))
     assert mock_django.post_webhook.call_args[0][0]["tipo"] == "CONFIRMAR"
 
@@ -140,19 +164,29 @@ async def test_keyword_manha_funciona_no_periodo(fake_rq, mock_django):
 # Estado AGUARDANDO_DATA_REMARCAR → escolha data → vai pra período
 # ─────────────────────────────────────────────────────────────
 
-async def test_escolher_data_remarcar_pede_periodo(fake_rq, mock_evolution, mock_django):
+
+async def test_escolher_data_remarcar_pede_periodo(
+    fake_rq, mock_evolution, mock_django
+):
     mapping = {"1": "2026-05-20", "2": "2026-05-21"}
-    await fake_rq.set_state(_TELEFONE, f"{STATE_AGUARDANDO_DATA_REMARCAR}{_json.dumps(mapping)}")
+    await fake_rq.set_state(
+        _TELEFONE, f"{STATE_AGUARDANDO_DATA_REMARCAR}{_json.dumps(mapping)}"
+    )
     await on_response.handle(_event("evt-dr1", "1"))
     mock_django.post_webhook.assert_not_called()  # ainda não posta
     new_state = await fake_rq.get_state(_TELEFONE)
     assert new_state.startswith(STATE_AGUARDANDO_PERIODO_REMARCAR)
-    assert _json.loads(new_state[len(STATE_AGUARDANDO_PERIODO_REMARCAR):])["data"] == "2026-05-20"
+    assert (
+        _json.loads(new_state[len(STATE_AGUARDANDO_PERIODO_REMARCAR) :])["data"]
+        == "2026-05-20"
+    )
 
 
 async def test_data_invalida_no_remarcar_incrementa_erro(fake_rq, mock_django):
     mapping = {"1": "2026-05-20"}
-    await fake_rq.set_state(_TELEFONE, f"{STATE_AGUARDANDO_DATA_REMARCAR}{_json.dumps(mapping)}")
+    await fake_rq.set_state(
+        _TELEFONE, f"{STATE_AGUARDANDO_DATA_REMARCAR}{_json.dumps(mapping)}"
+    )
     await on_response.handle(_event("evt-dr-bad", "99"))
     assert mock_django.post_webhook.call_args[0][0]["tipo"] == "RESPOSTA_INVALIDA"
 
@@ -161,8 +195,14 @@ async def test_data_invalida_no_remarcar_incrementa_erro(fake_rq, mock_django):
 # Estado AGUARDANDO_PERIODO_REMARCAR → REMARCAR + slot
 # ─────────────────────────────────────────────────────────────
 
-async def test_periodo_remarcar_posta_webhook_remarcar(fake_rq, mock_django, mock_evolution):
-    await fake_rq.set_state(_TELEFONE, f"{STATE_AGUARDANDO_PERIODO_REMARCAR}{_json.dumps({'data': '2026-05-20'})}")
+
+async def test_periodo_remarcar_posta_webhook_remarcar(
+    fake_rq, mock_django, mock_evolution
+):
+    await fake_rq.set_state(
+        _TELEFONE,
+        f"{STATE_AGUARDANDO_PERIODO_REMARCAR}{_json.dumps({'data': '2026-05-20'})}",
+    )
     await on_response.handle(_event("evt-pr1", "2"))
     payload = mock_django.post_webhook.call_args[0][0]
     assert payload["tipo"] == "REMARCAR"
@@ -175,9 +215,14 @@ async def test_periodo_remarcar_posta_webhook_remarcar(fake_rq, mock_django, moc
 # Estado AGUARDANDO_TEXTO_ENTREGUE → posta webhook JA_ENTREGUE com qualquer texto
 # ─────────────────────────────────────────────────────────────
 
-async def test_texto_livre_apos_ja_entregue_posta_webhook(fake_rq, mock_django, mock_evolution):
+
+async def test_texto_livre_apos_ja_entregue_posta_webhook(
+    fake_rq, mock_django, mock_evolution
+):
     await fake_rq.set_state(_TELEFONE, STATE_AGUARDANDO_TEXTO_ENTREGUE)
-    await on_response.handle(_event("evt-tx1", "Entreguei na loja Centro ao Joao na sexta passada"))
+    await on_response.handle(
+        _event("evt-tx1", "Entreguei na loja Centro ao Joao na sexta passada")
+    )
     payload = mock_django.post_webhook.call_args[0][0]
     assert payload["tipo"] == "JA_ENTREGUE"
     # texto livre fica no raw para o Django ler
@@ -192,6 +237,7 @@ async def test_texto_livre_apos_ja_entregue_posta_webhook(fake_rq, mock_django, 
 # ─────────────────────────────────────────────────────────────
 # Casos transversais
 # ─────────────────────────────────────────────────────────────
+
 
 async def test_extended_text_message_e_aceito(mock_django):
     evt = {
@@ -244,13 +290,16 @@ async def test_chat_id_lid_usa_remote_jid_alt(fake_rq):
 async def test_mensagem_sem_texto_e_ignorada(mock_django):
     evt = {
         "event": "messages.upsert",
-        "data": {"key": {"id": "evt-empty", "remoteJid": _CHAT_ID, "fromMe": False}, "message": {}},
+        "data": {
+            "key": {"id": "evt-empty", "remoteJid": _CHAT_ID, "fromMe": False},
+            "message": {},
+        },
     }
     await on_response.handle(evt)
     mock_django.post_webhook.assert_not_called()
 
 
 async def test_resposta_valida_reseta_contador_de_erros(fake_rq):
-    await on_response.handle(_event("evt-i1", "xyz"))   # erro 1
-    await on_response.handle(_event("evt-i2", "1"))     # válida — reseta
+    await on_response.handle(_event("evt-i1", "xyz"))  # erro 1
+    await on_response.handle(_event("evt-i2", "1"))  # válida — reseta
     assert await fake_rq._ensure_client().get(f"errors:{_CHAT_ID}") is None
