@@ -95,11 +95,16 @@ Edite o `.env` e preencha os valores reais:
 | `MAX_MESSAGES_PER_MINUTE`   | Limite de envios por minuto (anti-bloqueio)   | `4`                         |
 | `LOG_LEVEL`                 | Nível de log (`DEBUG`/`INFO`/`WARNING`/`ERROR`)| `INFO`                     |
 | `WORKER_HTTP_PORT`          | Porta HTTP do worker (FastAPI)                | `8000`                      |
-| `REPORTS_ENABLED`           | Liga/desliga crons de relatórios              | `false`                     |
 | `REPORT_TARGETS`            | Destinos: `test`, `production`, `test,production` | `test`                  |
 | `WHATSAPP_TEST_GROUP_JID`   | Grupo WhatsApp de homologação                 | —                           |
 | `WHATSAPP_REPORT_GROUP_JID` | Grupo WhatsApp oficial                        | —                           |
-| `REPORT_TIMEZONE`           | Timezone dos crons/relatórios                 | `America/Sao_Paulo`         |
+| `REPORT_TIMEZONE`           | Timezone da agenda/relatórios                 | `America/Sao_Paulo`         |
+| `REPORT_SCHEDULER_ENABLED`  | Liga/desliga os envios no grupo               | `true`                      |
+| `REPORT_MORNING_TIME`       | Horário da mensagem de bom dia                | `06:00`                     |
+| `REPORT_CYCLE_FIRST`        | Primeiro relatório do dia                     | `06:30`                     |
+| `REPORT_CYCLE_LAST`         | Último relatório do dia                       | `20:30`                     |
+| `REPORT_CYCLE_INTERVAL_HOURS` | Intervalo entre relatórios (horas)          | `2`                         |
+| `REPORTS_ENABLED`           | Legado, não lido pelo scheduler               | `false`                     |
 | `DMAIS_PORTAL_URL`          | URL do portal para prints/dados               | `http://localhost:8001`     |
 | `DMAIS_PORTAL_EMAIL`        | Email de login no portal                      | —                           |
 | `DMAIS_PORTAL_PASSWORD`     | Senha de login no portal                      | —                           |

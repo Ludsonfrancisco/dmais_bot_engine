@@ -43,11 +43,22 @@ class Settings(BaseSettings):
     WORKER_HTTP_PORT: int = 8000
 
     # Report Automation (WhatsApp group reports)
-    REPORTS_ENABLED: bool = False
     REPORT_TARGETS: str = "test"
     WHATSAPP_TEST_GROUP_JID: str = ""
     WHATSAPP_REPORT_GROUP_JID: str = ""
     REPORT_TIMEZONE: str = "America/Sao_Paulo"
+
+    # Agenda dos relatorios. O scheduler le daqui; mudar horario nao exige
+    # mexer no codigo.
+    REPORT_SCHEDULER_ENABLED: bool = True
+    REPORT_MORNING_TIME: str = "06:00"
+    REPORT_CYCLE_FIRST: str = "06:30"
+    REPORT_CYCLE_LAST: str = "20:30"
+    REPORT_CYCLE_INTERVAL_HOURS: int = 2
+
+    # Legado: nunca foram lidos pelo scheduler, que sempre usou horario fixo
+    # no codigo. Ficam aceitos para nao quebrar .env existente.
+    REPORTS_ENABLED: bool = False
     REPORT_BACKLOG_CRON: str = "0 8 * * *"
     REPORT_PRAZO_CRON: str = "0 12 * * *"
     REPORT_RESUMO_CRON: str = "0 18 * * *"
@@ -96,6 +107,30 @@ class Settings(BaseSettings):
         if invalid:
             raise ValueError(f"invalid report target(s): {', '.join(invalid)}")
         return ",".join(dict.fromkeys(targets))
+
+    @field_validator(
+        "REPORT_MORNING_TIME",
+        "REPORT_CYCLE_FIRST",
+        "REPORT_CYCLE_LAST",
+        mode="after",
+    )
+    @classmethod
+    def must_be_hour_and_minute(cls, v: str) -> str:
+        value = v.strip()
+        try:
+            hour, minute = (int(part) for part in value.split(":"))
+        except ValueError:
+            raise ValueError("must be HH:MM") from None
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise ValueError("must be a valid time between 00:00 and 23:59")
+        return f"{hour:02d}:{minute:02d}"
+
+    @field_validator("REPORT_CYCLE_INTERVAL_HOURS", mode="after")
+    @classmethod
+    def must_be_positive_interval(cls, v: int) -> int:
+        if not 1 <= v <= 24:
+            raise ValueError("must be between 1 and 24 hours")
+        return v
 
     @field_validator("REPORT_TIMEZONE", mode="after")
     @classmethod

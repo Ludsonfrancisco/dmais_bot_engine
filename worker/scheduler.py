@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 from worker.logs import get_logger
 from worker.redis_queue import redis_queue
+from worker.report_schedule import is_cycle_time, is_morning_time
 from worker.reports.formatter import format_cycle_report, format_morning_message
 from worker.reports.stats import get_deltas, save_snapshot
 from worker.reports.data import (
@@ -21,14 +22,7 @@ logger = get_logger(__name__)
 # America/Sao_Paulo timezone
 _TZ = ZoneInfo(settings.REPORT_TIMEZONE)
 
-# Schedule
-_MORNING_HOUR = 6
-_MORNING_MINUTE = 0
-_FIRST_CYCLE_HOUR = 6
-_FIRST_CYCLE_MINUTE = 10
-_INTERVAL_HOURS = 2
-_LAST_CYCLE_HOUR = 20
-_LAST_CYCLE_MINUTE = 10
+# Schedule — vem das settings (.env), nao do codigo (worker/report_schedule.py).
 
 # Redis key for sent cycles persistence
 _SENT_CYCLES_KEY = "reports:sent_cycles"
@@ -185,6 +179,10 @@ async def run_scheduler() -> None:
     """Main scheduler loop. Runs forever, checking every 60 seconds."""
     global _sent_morning_today, _sent_cycles
 
+    if not settings.REPORT_SCHEDULER_ENABLED:
+        logger.info("scheduler.disabled")
+        return
+
     # Restore sent cycles from Redis (survives container restart)
     try:
         _sent_cycles = await _load_sent_cycles()
@@ -210,27 +208,18 @@ async def run_scheduler() -> None:
                 except Exception:
                     pass
 
-            # Morning message at 06:00
-            if (
-                now.hour == _MORNING_HOUR
-                and now.minute >= _MORNING_MINUTE
-                and _sent_morning_today != today
-            ):
+            # Mensagem de bom dia (REPORT_MORNING_TIME)
+            if is_morning_time(now) and _sent_morning_today != today:
                 await _send_morning(None)
                 logger.info("scheduler.morning_sent")
 
-            # Cycle times: 06:10, 08:10, ..., 20:10
+            # Ciclos: REPORT_CYCLE_FIRST ate REPORT_CYCLE_LAST, de
+            # REPORT_CYCLE_INTERVAL_HOURS em REPORT_CYCLE_INTERVAL_HOURS.
             cycle_hour = now.hour
             cycle_minute = now.minute
             cycle_key = f"{today}:{cycle_hour:02d}"
 
-            is_cycle_time = (
-                _FIRST_CYCLE_HOUR <= cycle_hour <= _LAST_CYCLE_HOUR
-                and cycle_minute >= _FIRST_CYCLE_MINUTE
-                and (cycle_hour - _FIRST_CYCLE_HOUR) % _INTERVAL_HOURS == 0
-            )
-
-            if is_cycle_time and cycle_key not in _sent_cycles:
+            if is_cycle_time(now) and cycle_key not in _sent_cycles:
                 hour_label = f"{cycle_hour:02d}:{cycle_minute:02d}"
                 await _send_cycle(hour_label, None)
                 logger.info("scheduler.cycle_sent", hour=hour_label)

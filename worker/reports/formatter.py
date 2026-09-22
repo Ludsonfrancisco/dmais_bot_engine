@@ -1,8 +1,20 @@
 """Format WhatsApp report messages."""
 
+from worker.report_schedule import cycle_labels
+
+
+def _cronograma() -> str:
+    """Cronograma real do scheduler, em linhas de quatro horarios."""
+    labels = list(cycle_labels())
+    linhas = [
+        " | ".join(labels[inicio:inicio + 4])
+        for inicio in range(0, len(labels), 4)
+    ]
+    return "\n".join(linhas)
+
 
 def format_morning_message() -> str:
-    """Mensagem das 06:00 com cronograma do dia."""
+    """Mensagem de bom dia com o cronograma do dia."""
     return (
         "☀️ *BOM DIA, TIME DMAIS!* 🚀\n"
         "\n"
@@ -11,8 +23,7 @@ def format_morning_message() -> str:
         " monitoramento rodará em ciclos exatos de 2 horas.\n"
         "\n"
         "🕒 *CRONOGRAMA DE ATUALIZAÇÕES:*\n"
-        "06:10 | 08:10 | 10:10 | 12:10\n"
-        "14:10 | 16:10 | 18:10 | 20:10\n"
+        f"{_cronograma()}\n"
         "\n"
         "📌 *O QUE ACOMPANHAREMOS HOJE:*\n"
         "\n"
